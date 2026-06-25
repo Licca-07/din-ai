@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatJournalDateLabel } from "@/lib/din/journal-date";
+import { fetchAllJournals } from "@/lib/din/journal-client";
 import type { DinJournal } from "@/types/journal";
 
 type JournalBookProps = {
@@ -13,36 +14,46 @@ export default function JournalBook({ refreshKey }: JournalBookProps) {
   const [journals, setJournals] = useState<DinJournal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const loadJournals = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/journals", { cache: "no-store" });
-      const data = (await response.json()) as
-        | { journals: DinJournal[] }
-        | { error: string };
-
-      if (!response.ok) {
-        throw new Error("error" in data ? data.error : "日記の取得に失敗しました。");
-      }
-
-      setJournals("journals" in data ? data.journals : []);
-    } catch (loadError) {
-      const message =
-        loadError instanceof Error
-          ? loadError.message
-          : "日記の取得に失敗しました。";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadedRevisionRef = useRef<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    const force =
+      loadedRevisionRef.current === null ||
+      loadedRevisionRef.current !== refreshKey;
+    loadedRevisionRef.current = refreshKey;
+
+    async function loadJournals() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const nextJournals = await fetchAllJournals({ force });
+
+        if (!cancelled) {
+          setJournals(nextJournals);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          const message =
+            loadError instanceof Error
+              ? loadError.message
+              : "日記の取得に失敗しました。";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
     void loadJournals();
-  }, [loadJournals, refreshKey]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
 
   if (isLoading) {
     return (

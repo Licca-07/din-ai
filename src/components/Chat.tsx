@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { generateId } from "@/lib/generate-id";
 import {
   addMemoryItems,
@@ -26,6 +26,9 @@ import {
   recordSessionVisit,
 } from "@/lib/din/session-context";
 import { getJournalDateJst } from "@/lib/din/journal-date";
+import {
+  ensureDailyJournal,
+} from "@/lib/din/journal-client";
 import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
@@ -42,30 +45,6 @@ type DinReply = {
   newMemoryItems?: MemoryItem[];
   referencedMemoryIds?: string[];
 };
-
-async function ensureDailyJournal(
-  requestRef: MutableRefObject<{ date: string; promise: Promise<void> } | null>,
-  onUpdated?: () => void,
-): Promise<void> {
-  const journalDate = getJournalDateJst();
-  const inFlight = requestRef.current;
-
-  if (inFlight?.date === journalDate) {
-    return inFlight.promise;
-  }
-
-  const promise = (async () => {
-    try {
-      await fetch("/api/journals/generate", { method: "POST" });
-      onUpdated?.();
-    } catch {
-      // 日記生成失敗はチャット開始を妨げない
-    }
-  })();
-
-  requestRef.current = { date: journalDate, promise };
-  return promise;
-}
 
 async function requestDinReply(body: {
   messages: ChatMessage[];
@@ -169,39 +148,8 @@ export default function Chat({
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const journalRequestRef = useRef<{
-    date: string;
-    promise: Promise<void>;
-  } | null>(null);
-
-  const loadTodayJournal = useCallback(async () => {
-    setIsJournalLoading(true);
-    setJournalError(null);
-
-    try {
-      const response = await fetch("/api/journals/today", { cache: "no-store" });
-      const data = (await response.json()) as
-        | { journalDate: string; journal: DinJournal | null }
-        | { error: string };
-
-      if (!response.ok) {
-        throw new Error("error" in data ? data.error : "日記の取得に失敗しました。");
-      }
-
-      if ("journalDate" in data) {
-        setTodayJournalDate(data.journalDate);
-        setTodayJournal(data.journal);
-      }
-    } catch (loadError) {
-      const message =
-        loadError instanceof Error
-          ? loadError.message
-          : "日記の取得に失敗しました。";
-      setJournalError(message);
-    } finally {
-      setIsJournalLoading(false);
-    }
-  }, []);
+  const onJournalUpdatedRef = useRef(onJournalUpdated);
+  onJournalUpdatedRef.current = onJournalUpdated;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -213,9 +161,31 @@ export default function Chat({
     async function bootstrap() {
       setIsBootstrapping(true);
       setError(null);
+      setIsJournalLoading(true);
+      setJournalError(null);
 
-      await ensureDailyJournal(journalRequestRef, onJournalUpdated);
-      void loadTodayJournal();
+      try {
+        const today = await ensureDailyJournal(() => {
+          onJournalUpdatedRef.current?.();
+        });
+
+        if (cancelled) return;
+
+        setTodayJournalDate(today.journalDate);
+        setTodayJournal(today.journal);
+      } catch (journalError) {
+        if (cancelled) return;
+
+        const message =
+          journalError instanceof Error
+            ? journalError.message
+            : "日記の取得に失敗しました。";
+        setJournalError(message);
+      } finally {
+        if (!cancelled) {
+          setIsJournalLoading(false);
+        }
+      }
 
       const profile = ensureUserProfile();
       setUserProfile(profile);
@@ -304,7 +274,7 @@ export default function Chat({
     return () => {
       cancelled = true;
     };
-  }, [loadTodayJournal, onJournalUpdated]);
+  }, []);
 
   useEffect(() => {
     if (isBootstrapping || messages.length === 0) return;
@@ -383,7 +353,6 @@ export default function Chat({
 
   function openJournalSheet() {
     setIsJournalOpen(true);
-    void loadTodayJournal();
   }
 
   const journalPreview = todayJournal?.content

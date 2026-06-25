@@ -49,6 +49,10 @@ export default function DinApp() {
     setMemoryRevision((value) => value + 1);
   }, []);
 
+  const handleJournalUpdated = useCallback(() => {
+    setJournalRevision((value) => value + 1);
+  }, []);
+
   if (!memoryReady) {
     return (
       <div className="flex h-dvh items-center justify-center bg-zinc-950 px-4 pb-safe-bottom pt-safe-top text-zinc-400">
@@ -93,7 +97,7 @@ export default function DinApp() {
         {activeTab === "chat" ? (
           <Chat
             key={memoryRevision}
-            onJournalUpdated={() => setJournalRevision((value) => value + 1)}
+            onJournalUpdated={handleJournalUpdated}
           />
         ) : (
           <MemoryBook
