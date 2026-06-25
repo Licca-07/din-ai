@@ -14,8 +14,6 @@ import {
   recordLastConversation,
   recordTopicMentionsFromMessage,
   recordTopicsFromMemoryItems,
-  resolveStartupProactiveOpener,
-  recordProactiveOpenerUsed,
   saveChatHistory,
   saveUserProfile,
 } from "@/lib/din/memory";
@@ -33,6 +31,14 @@ import {
 } from "@/lib/din/journal-client";
 import { revealAssistantBubbles } from "@/lib/din/chat-bubble-reveal";
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
+import {
+  isAwaitingUserReply,
+  markPendingContinuationShown,
+  pickPendingContinuationMessage,
+  resolveStartupProactiveOpener,
+  recordProactiveOpenerUsed,
+  shouldShowPendingContinuation,
+} from "@/lib/din/proactive-opener";
 import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
@@ -221,6 +227,45 @@ export default function Chat({
           (message) => message.role === "user",
         ).length;
         syncConversationCountFromHistory(userMessageCount);
+
+        if (isAwaitingUserReply(savedMessages)) {
+          setMessages(savedMessages);
+
+          const lastAssistantMessage = savedMessages[savedMessages.length - 1];
+          const sessionContext = buildSessionContext();
+
+          if (
+            lastAssistantMessage &&
+            sessionContext.absence !== "normal" &&
+            shouldShowPendingContinuation(lastAssistantMessage.id)
+          ) {
+            try {
+              setIsTyping(true);
+              await revealAssistantBubbles(pickPendingContinuationMessage(), {
+                onTypingChange: setIsTyping,
+                appendMessage: (message) => {
+                  if (cancelled) return;
+                  setMessages((prev) => [...prev, message]);
+                },
+                shouldCancel: () => cancelled,
+              });
+
+              if (!cancelled) {
+                markPendingContinuationShown(lastAssistantMessage.id);
+              }
+            } catch {
+              // 継続メッセージはローカル表示のみ。失敗しても履歴はそのまま。
+            } finally {
+              if (!cancelled) {
+                setIsTyping(false);
+              }
+            }
+          }
+
+          recordSessionVisit();
+          setIsBootstrapping(false);
+          return;
+        }
 
         const proactiveOpener = resolveStartupProactiveOpener(loadMemory());
 
@@ -507,7 +552,7 @@ export default function Chat({
             onKeyDown={handleKeyDown}
             placeholder="メッセージを入力..."
             disabled={isBootstrapping || isTyping}
-            className="max-h-40 min-h-[48px] flex-1 resize-none rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 disabled:opacity-50"
+            className="text-ios-input max-h-40 min-h-[48px] flex-1 resize-none rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 leading-6 text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 disabled:opacity-50"
           />
           <button
             type="submit"

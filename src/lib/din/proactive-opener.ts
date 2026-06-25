@@ -23,8 +23,15 @@ export type ProactiveOpener = {
 };
 
 const LAST_PROACTIVE_SEEDS_KEY = "din-ai-last-proactive-seeds";
+const PENDING_CONTINUATION_KEY = "din-ai-pending-continuation-for";
 const MAX_STORED_SEEDS = 8;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PENDING_CONTINUATION_MESSAGES = [
+  "どうしたんだ。",
+  "まだ起きていたのか。",
+  "さっきの続きだ。",
+];
 
 const SESSION_OPENERS: Record<DinAbsence, string[]> = {
   normal: ["今日は何をしていた？", "調子はどうだ。", "何かあったか。"],
@@ -86,6 +93,30 @@ function formatRecentConversation(messages: StoredChatMessage[], limit = 8): str
 function pickRandom<T>(items: T[]): T | null {
   if (items.length === 0) return null;
   return items[Math.floor(Math.random() * items.length)] ?? null;
+}
+
+/** 最後のメッセージが assistant で、ユーザー返信待ちか */
+export function isAwaitingUserReply(messages: StoredChatMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  return last?.role === "assistant";
+}
+
+export function pickPendingContinuationMessage(): string {
+  return (
+    pickRandom(PENDING_CONTINUATION_MESSAGES) ?? PENDING_CONTINUATION_MESSAGES[0]
+  );
+}
+
+export function shouldShowPendingContinuation(assistantMessageId: string): boolean {
+  if (typeof window === "undefined") return false;
+
+  return localStorage.getItem(PENDING_CONTINUATION_KEY) !== assistantMessageId;
+}
+
+export function markPendingContinuationShown(assistantMessageId: string): void {
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem(PENDING_CONTINUATION_KEY, assistantMessageId);
 }
 
 function selectMemorySeed(memory: DinMemory, excludeSeeds: Set<string>): string | null {
