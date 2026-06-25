@@ -12,6 +12,10 @@ import {
   updateMemory,
 } from "@/lib/din/memory";
 import {
+  buildRecallScoreContext,
+  scoreRecallTopic,
+} from "@/lib/din/memory-recall";
+import {
   sortLongTermMemories,
   sortShortTermMemories,
 } from "@/lib/din/memory-priority";
@@ -149,10 +153,11 @@ function StoredMemoryList({
 
 type RecallTopicListProps = {
   topics: FollowUpTopic[];
+  themeRecurrence: Map<string, number>;
   onDelete: (id: string) => void;
 };
 
-function RecallTopicList({ topics, onDelete }: RecallTopicListProps) {
+function RecallTopicList({ topics, themeRecurrence, onDelete }: RecallTopicListProps) {
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
       <div>
@@ -175,7 +180,15 @@ function RecallTopicList({ topics, onDelete }: RecallTopicListProps) {
         </div>
       ) : (
         <ul className="space-y-3">
-          {topics.map((topic) => (
+          {topics.map((topic) => {
+            const relatedCount = themeRecurrence.get(topic.id) ?? 0;
+            const isOngoing = topic.mentionCount >= 2 || relatedCount >= 1;
+            const isUnresolved =
+              !topic.lastFollowedUpAt ||
+              new Date(topic.lastMentionedAt).getTime() >
+                new Date(topic.lastFollowedUpAt).getTime();
+
+            return (
             <li
               key={topic.id}
               className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4"
@@ -185,14 +198,27 @@ function RecallTopicList({ topics, onDelete }: RecallTopicListProps) {
                   <p className="text-sm leading-6 text-zinc-100">{topic.content}</p>
                   <div className="flex flex-wrap gap-2 text-xs text-zinc-500">
                     <span className="rounded-full border border-zinc-700 px-2 py-0.5">
-                      重要度 {topic.importance}/5
-                    </span>
-                    <span className="rounded-full border border-zinc-700 px-2 py-0.5">
                       言及 {topic.mentionCount}回
                     </span>
-                    <span className="rounded-full border border-zinc-700 px-2 py-0.5">
-                      質問 {topic.askedCount}回
-                    </span>
+                    {relatedCount > 0 && (
+                      <span className="rounded-full border border-emerald-500/30 px-2 py-0.5 text-emerald-300">
+                        関連 {relatedCount}件
+                      </span>
+                    )}
+                    {isOngoing && (
+                      <span className="rounded-full border border-emerald-500/30 px-2 py-0.5 text-emerald-300">
+                        継続テーマ
+                      </span>
+                    )}
+                    {isUnresolved ? (
+                      <span className="rounded-full border border-amber-500/30 px-2 py-0.5 text-amber-200">
+                        未解決
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                        質問 {topic.askedCount}回
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -204,7 +230,8 @@ function RecallTopicList({ topics, onDelete }: RecallTopicListProps) {
                 </button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>
@@ -366,8 +393,11 @@ export default function MemoryBook({
   const relationship = getRelationshipFromCount(memory.conversationCount);
   const longTermMemories = sortLongTermMemories(memory.longTermMemories);
   const shortTermMemories = sortShortTermMemories(memory.shortTermMemories);
+  const recallScoreContext = buildRecallScoreContext(memory.followUpTopics);
   const recallTopics = [...memory.followUpTopics].sort(
-    (left, right) => right.importance - left.importance,
+    (left, right) =>
+      scoreRecallTopic(right, recallScoreContext) -
+      scoreRecallTopic(left, recallScoreContext),
   );
 
   return (
@@ -463,7 +493,11 @@ export default function MemoryBook({
             />
           </section>
 
-          <RecallTopicList topics={recallTopics} onDelete={handleDeleteRecallTopic} />
+          <RecallTopicList
+            topics={recallTopics}
+            themeRecurrence={recallScoreContext.themeRecurrence}
+            onDelete={handleDeleteRecallTopic}
+          />
 
           <StoredMemoryList
             title="長期記憶"

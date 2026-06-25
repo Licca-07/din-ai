@@ -106,7 +106,6 @@ function upsertRecallTopic(
   if (normalized.length < 3) return topics;
 
   const iso = now.toISOString();
-  const importance = clampImportance(input.importance ?? 3);
   const existing = topics.find(
     (topic) => normalizeTopicContent(topic.content) === normalized,
   );
@@ -116,7 +115,6 @@ function upsertRecallTopic(
       topic.id === existing.id
         ? {
             ...topic,
-            importance: clampImportance(Math.max(topic.importance, importance)),
             mentionCount: topic.mentionCount + 1,
             lastMentionedAt: iso,
             sourceMemoryIds: sourceMemoryId
@@ -132,7 +130,7 @@ function upsertRecallTopic(
     {
       id: generateId(),
       content: normalized,
-      importance,
+      importance: clampImportance(input.importance ?? 3),
       mentionCount: 1,
       lastMentionedAt: iso,
       lastFollowedUpAt: null,
