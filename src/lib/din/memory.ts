@@ -1,5 +1,7 @@
 import {
+  applyFollowUpRecalls,
   applyTopicMentions,
+  bumpFollowUpMentionsFromMessage,
   extractTopicsFromMemoryItem,
   extractTopicsFromMessage,
   markFollowUpAsked,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/din/memory-migration";
 import type { DinMemory, StoredChatMessage } from "@/types/din-memory";
 import type { MemoryItem } from "@/types/memory-item";
+import type { FollowUpRecallInput } from "@/types/follow-up";
 import type { UserProfile } from "@/types/user-profile";
 
 export {
@@ -437,40 +440,42 @@ export function describeUserProfile(profile: UserProfile): string {
 export { clampImportance, createMemoryItemInternal as createMemoryItem };
 
 export {
+  applyFollowUpRecalls,
   applyTopicMentions,
+  bumpFollowUpMentionsFromMessage,
   extractTopicsFromMemoryItem,
   extractTopicsFromMessage,
   markFollowUpAsked,
   resolveFollowUpTopic,
 };
 
-export function recordTopicMentionsFromMessage(message: string): void {
+export function addFollowUpRecalls(recalls: FollowUpRecallInput[]): void {
+  if (recalls.length === 0) return;
+
   updateMemory((memory) => ({
     ...memory,
-    ...applyTopicMentions(memory, extractTopicsFromMessage(message)),
+    ...applyFollowUpRecalls(memory, recalls),
   }));
 }
 
-export function recordTopicsFromMemoryItems(items: MemoryItem[]): void {
-  if (items.length === 0) return;
+export function removeFollowUpTopic(id: string): void {
+  updateMemory((memory) => ({
+    ...memory,
+    followUpTopics: memory.followUpTopics.filter((topic) => topic.id !== id),
+    lastFollowUpTopicId:
+      memory.lastFollowUpTopicId === id ? null : memory.lastFollowUpTopicId,
+  }));
+}
 
-  updateMemory((memory) => {
-    let next = memory;
+export function recordTopicMentionsFromMessage(message: string): void {
+  updateMemory((memory) => ({
+    ...memory,
+    ...bumpFollowUpMentionsFromMessage(memory, message),
+  }));
+}
 
-    for (const item of items) {
-      next = {
-        ...next,
-        ...applyTopicMentions(
-          next,
-          extractTopicsFromMemoryItem(item),
-          new Date(),
-          item.id,
-        ),
-      };
-    }
-
-    return next;
-  });
+export function recordTopicsFromMemoryItems(_items: MemoryItem[]): void {
+  // Recall 候補は Din マーカーの followUp のみで追加する
 }
 
 export function resolveSessionFollowUp() {

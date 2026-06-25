@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { generateId } from "@/lib/generate-id";
 import {
   addMemoryItems,
+  addFollowUpRecalls,
   ensureUserProfile,
   loadChatHistory,
   loadMemory,
@@ -35,6 +36,7 @@ import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
 import type { DinJournal } from "@/types/journal";
+import type { FollowUpRecallInput } from "@/types/follow-up";
 import type { MemoryItem } from "@/types/memory-item";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -45,6 +47,7 @@ type DinReply = {
   remembered: boolean;
   userProfile?: UserProfile;
   newMemoryItems?: MemoryItem[];
+  newFollowUpRecalls?: FollowUpRecallInput[];
   referencedMemoryIds?: string[];
 };
 
@@ -85,6 +88,7 @@ async function requestDinReply(body: {
         remembered?: boolean;
         userProfile?: UserProfile;
         newMemoryItems?: MemoryItem[];
+        newFollowUpRecalls?: FollowUpRecallInput[];
         referencedMemoryIds?: string[];
         followUpTopicId?: string;
       }
@@ -107,6 +111,10 @@ async function requestDinReply(body: {
   if (data.newMemoryItems?.length) {
     addMemoryItems(data.newMemoryItems);
     recordTopicsFromMemoryItems(data.newMemoryItems);
+  }
+
+  if (data.newFollowUpRecalls?.length) {
+    addFollowUpRecalls(data.newFollowUpRecalls);
   }
 
   if (data.followUpTopicId) {

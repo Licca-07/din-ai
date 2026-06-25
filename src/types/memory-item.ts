@@ -44,4 +44,8 @@ export type MemoryMarkerUpdate = {
     expiresAt?: string;
     category?: string;
   }>;
+  followUp?: Array<{
+    content: string;
+    importance?: MemoryImportance;
+  }>;
 };

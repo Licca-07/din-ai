@@ -5,6 +5,7 @@ import type {
   MemoryItem,
   MemoryItemKind,
 } from "@/types/memory-item";
+import { normalizeFollowUpTopic } from "@/lib/din/follow-up";
 import type { FollowUpTopic } from "@/types/follow-up";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -34,24 +35,7 @@ function isValidMemoryItemKind(value: unknown): value is MemoryItemKind {
 }
 
 function isValidFollowUpTopic(value: unknown): value is FollowUpTopic {
-  if (!value || typeof value !== "object") return false;
-
-  const topic = value as Record<string, unknown>;
-
-  return (
-    typeof topic.id === "string" &&
-    typeof topic.content === "string" &&
-    topic.content.trim().length > 0 &&
-    typeof topic.mentionCount === "number" &&
-    Number.isFinite(topic.mentionCount) &&
-    topic.mentionCount >= 0 &&
-    typeof topic.lastMentionedAt === "string" &&
-    typeof topic.createdAt === "string" &&
-    (topic.lastFollowedUpAt === null ||
-      typeof topic.lastFollowedUpAt === "string") &&
-    Array.isArray(topic.sourceMemoryIds) &&
-    topic.sourceMemoryIds.every((id) => typeof id === "string")
-  );
+  return normalizeFollowUpTopic(value) !== null;
 }
 
 export function isValidMemoryItem(value: unknown): value is MemoryItem {
@@ -116,7 +100,11 @@ export function normalizeMemory(value: Partial<DinMemory>): DinMemory {
     chatHistory: value.chatHistory ?? [],
     longTermMemories: value.longTermMemories ?? [],
     shortTermMemories: value.shortTermMemories ?? [],
-    followUpTopics: value.followUpTopics ?? [],
+    followUpTopics: Array.isArray(value.followUpTopics)
+      ? value.followUpTopics
+          .map((topic) => normalizeFollowUpTopic(topic))
+          .filter((topic): topic is FollowUpTopic => topic !== null)
+      : [],
     lastFollowUpTopicId: value.lastFollowUpTopicId ?? null,
   };
 }
@@ -174,7 +162,9 @@ export function normalizePartialMemory(value: unknown): DinMemory | null {
       ? memory.shortTermMemories.filter(isValidMemoryItem)
       : [],
     followUpTopics: Array.isArray(memory.followUpTopics)
-      ? memory.followUpTopics.filter(isValidFollowUpTopic)
+      ? memory.followUpTopics
+          .map((topic) => normalizeFollowUpTopic(topic))
+          .filter((topic): topic is FollowUpTopic => topic !== null)
       : [],
     lastFollowUpTopicId:
       memory.lastFollowUpTopicId === null ||

@@ -1,5 +1,6 @@
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
 import type { DinSessionContext } from "@/lib/din/session-context";
+import type { FollowUpRecallInput } from "@/types/follow-up";
 import type { MemoryItem } from "@/types/memory-item";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -27,6 +28,7 @@ export type ChatResponseBody = {
   remembered?: boolean;
   userProfile?: UserProfile;
   newMemoryItems?: MemoryItem[];
+  newFollowUpRecalls?: FollowUpRecallInput[];
   referencedMemoryIds?: string[];
   followUpTopicId?: string;
 };

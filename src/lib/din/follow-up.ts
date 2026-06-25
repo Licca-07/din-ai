@@ -1,9 +1,11 @@
 import { generateId } from "@/lib/generate-id";
+import { clampImportance } from "@/lib/din/memory-priority";
 import type { DinMemory } from "@/types/din-memory";
 import {
   FOLLOW_UP_MIN_DAYS,
   FOLLOW_UP_MIN_MENTIONS,
   FOLLOW_UP_PROBABILITY,
+  type FollowUpRecallInput,
   type FollowUpTopic,
 } from "@/types/follow-up";
 import type { MemoryItem } from "@/types/memory-item";
@@ -28,6 +30,45 @@ function getLastTouchedAt(topic: FollowUpTopic): string {
     new Date(topic.lastMentionedAt).getTime()
     ? topic.lastFollowedUpAt
     : topic.lastMentionedAt;
+}
+
+export function normalizeFollowUpTopic(value: unknown): FollowUpTopic | null {
+  if (!value || typeof value !== "object") return null;
+
+  const topic = value as Record<string, unknown>;
+  const content = typeof topic.content === "string" ? topic.content.trim() : "";
+
+  if (!content || typeof topic.id !== "string") return null;
+
+  const createdAt =
+    typeof topic.createdAt === "string" ? topic.createdAt : new Date().toISOString();
+  const lastMentionedAt =
+    typeof topic.lastMentionedAt === "string" ? topic.lastMentionedAt : createdAt;
+
+  return {
+    id: topic.id,
+    content,
+    importance: clampImportance(
+      typeof topic.importance === "number" ? topic.importance : 3,
+    ),
+    mentionCount:
+      typeof topic.mentionCount === "number" && Number.isFinite(topic.mentionCount)
+        ? Math.max(0, topic.mentionCount)
+        : 1,
+    lastMentionedAt,
+    lastFollowedUpAt:
+      topic.lastFollowedUpAt === null || typeof topic.lastFollowedUpAt === "string"
+        ? (topic.lastFollowedUpAt ?? null)
+        : null,
+    askedCount:
+      typeof topic.askedCount === "number" && Number.isFinite(topic.askedCount)
+        ? Math.max(0, topic.askedCount)
+        : 0,
+    createdAt,
+    sourceMemoryIds: Array.isArray(topic.sourceMemoryIds)
+      ? topic.sourceMemoryIds.filter((id): id is string => typeof id === "string")
+      : [],
+  };
 }
 
 export function extractTopicsFromMessage(message: string): string[] {
@@ -55,16 +96,17 @@ export function extractTopicsFromMemoryItem(item: MemoryItem): string[] {
   return [content.slice(0, 80)];
 }
 
-function upsertTopic(
+function upsertRecallTopic(
   topics: FollowUpTopic[],
-  content: string,
+  input: FollowUpRecallInput,
   now: Date,
   sourceMemoryId?: string,
 ): FollowUpTopic[] {
-  const normalized = normalizeTopicContent(content);
-  if (normalized.length < 5) return topics;
+  const normalized = normalizeTopicContent(input.content);
+  if (normalized.length < 3) return topics;
 
   const iso = now.toISOString();
+  const importance = clampImportance(input.importance ?? 3);
   const existing = topics.find(
     (topic) => normalizeTopicContent(topic.content) === normalized,
   );
@@ -74,6 +116,7 @@ function upsertTopic(
       topic.id === existing.id
         ? {
             ...topic,
+            importance: clampImportance(Math.max(topic.importance, importance)),
             mentionCount: topic.mentionCount + 1,
             lastMentionedAt: iso,
             sourceMemoryIds: sourceMemoryId
@@ -89,15 +132,77 @@ function upsertTopic(
     {
       id: generateId(),
       content: normalized,
+      importance,
       mentionCount: 1,
       lastMentionedAt: iso,
       lastFollowedUpAt: null,
+      askedCount: 0,
       createdAt: iso,
       sourceMemoryIds: sourceMemoryId ? [sourceMemoryId] : [],
     },
   ];
 }
 
+export function applyFollowUpRecalls(
+  memory: DinMemory,
+  entries: FollowUpRecallInput[],
+  now = new Date(),
+  sourceMemoryId?: string,
+): Pick<DinMemory, "followUpTopics"> {
+  let followUpTopics = memory.followUpTopics;
+
+  for (const entry of entries) {
+    followUpTopics = upsertRecallTopic(
+      followUpTopics,
+      entry,
+      now,
+      sourceMemoryId,
+    );
+  }
+
+  return { followUpTopics };
+}
+
+/** 既存 Recall 話題への言及のみカウント（新規話題は Din マーカー経由） */
+export function bumpFollowUpMentionsFromMessage(
+  memory: DinMemory,
+  message: string,
+  now = new Date(),
+): Pick<DinMemory, "followUpTopics"> {
+  if (memory.followUpTopics.length === 0) {
+    return { followUpTopics: memory.followUpTopics };
+  }
+
+  const normalizedMessage = normalizeTopicContent(message);
+  const extracted = extractTopicsFromMessage(message);
+  const iso = now.toISOString();
+
+  const followUpTopics = memory.followUpTopics.map((topic) => {
+    const normalizedTopic = normalizeTopicContent(topic.content);
+    const mentionedByExtract = extracted.some(
+      (fragment) =>
+        normalizedTopic.includes(normalizeTopicContent(fragment)) ||
+        normalizeTopicContent(fragment).includes(normalizedTopic),
+    );
+    const mentionedDirectly =
+      normalizedMessage.includes(normalizedTopic) ||
+      normalizedTopic.includes(normalizedMessage);
+
+    if (!mentionedByExtract && !mentionedDirectly) {
+      return topic;
+    }
+
+    return {
+      ...topic,
+      mentionCount: topic.mentionCount + 1,
+      lastMentionedAt: iso,
+    };
+  });
+
+  return { followUpTopics };
+}
+
+/** @deprecated 新規 Recall は Din マーカーの followUp のみ */
 export function applyTopicMentions(
   memory: DinMemory,
   contents: string[],
@@ -107,7 +212,12 @@ export function applyTopicMentions(
   let followUpTopics = memory.followUpTopics;
 
   for (const content of contents) {
-    followUpTopics = upsertTopic(followUpTopics, content, now, sourceMemoryId);
+    followUpTopics = upsertRecallTopic(
+      followUpTopics,
+      { content, importance: 3 },
+      now,
+      sourceMemoryId,
+    );
   }
 
   return { followUpTopics };
@@ -167,12 +277,16 @@ export function markFollowUpAsked(
     lastFollowUpTopicId: topicId,
     followUpTopics: memory.followUpTopics.map((topic) =>
       topic.id === topicId
-        ? { ...topic, lastFollowedUpAt: iso }
+        ? {
+            ...topic,
+            lastFollowedUpAt: iso,
+            askedCount: topic.askedCount + 1,
+          }
         : topic,
     ),
   };
 }
 
 export function describeFollowUpTopic(topic: FollowUpTopic): string {
-  return `- 話題: ${topic.content}（言及${topic.mentionCount}回）`;
+  return `- 話題: ${topic.content}（重要度${topic.importance}, 言及${topic.mentionCount}回, 質問${topic.askedCount}回）`;
 }

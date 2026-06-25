@@ -1,4 +1,5 @@
-import { createMemoryItem } from "@/lib/din/memory-priority";
+import { clampImportance, createMemoryItem } from "@/lib/din/memory-priority";
+import type { FollowUpRecallInput } from "@/types/follow-up";
 import type { MemoryItem, MemoryMarkerUpdate } from "@/types/memory-item";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -130,6 +131,26 @@ function buildMemoryItemsFromMarker(updates: MemoryMarkerUpdate): MemoryItem[] {
   return items;
 }
 
+function buildFollowUpRecallsFromMarker(
+  updates: MemoryMarkerUpdate,
+): FollowUpRecallInput[] {
+  if (!Array.isArray(updates.followUp)) return [];
+
+  const recalls: FollowUpRecallInput[] = [];
+
+  for (const entry of updates.followUp) {
+    const content = entry.content?.trim();
+    if (!content) continue;
+
+    recalls.push({
+      content,
+      importance: entry.importance ? clampImportance(entry.importance) : undefined,
+    });
+  }
+
+  return recalls;
+}
+
 export function parseMemoryFromResponse(
   content: string,
   currentProfile: UserProfile,
@@ -138,6 +159,7 @@ export function parseMemoryFromResponse(
   remembered: boolean;
   profile: UserProfile;
   newMemoryItems: MemoryItem[];
+  newFollowUpRecalls: FollowUpRecallInput[];
 } {
   const match = content.match(MEMORY_MARKER_PATTERN);
 
@@ -147,6 +169,7 @@ export function parseMemoryFromResponse(
       remembered: false,
       profile: currentProfile,
       newMemoryItems: [],
+      newFollowUpRecalls: [],
     };
   }
 
@@ -156,14 +179,18 @@ export function parseMemoryFromResponse(
     const updates = JSON.parse(match[1]) as MemoryMarkerUpdate;
     const profile = applyProfileUpdates(currentProfile, updates);
     const newMemoryItems = buildMemoryItemsFromMarker(updates);
+    const newFollowUpRecalls = buildFollowUpRecallsFromMarker(updates);
     const remembered =
-      hasProfileChanges(currentProfile, profile) || newMemoryItems.length > 0;
+      hasProfileChanges(currentProfile, profile) ||
+      newMemoryItems.length > 0 ||
+      newFollowUpRecalls.length > 0;
 
     return {
       content: cleanedContent,
       remembered,
       profile,
       newMemoryItems,
+      newFollowUpRecalls,
     };
   } catch {
     return {
@@ -171,6 +198,7 @@ export function parseMemoryFromResponse(
       remembered: false,
       profile: currentProfile,
       newMemoryItems: [],
+      newFollowUpRecalls: [],
     };
   }
 }

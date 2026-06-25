@@ -1,18 +1,15 @@
 import { buildSessionContext, type DinAbsence, type DinSessionContext } from "@/lib/din/session-context";
-import {
-  extractTopicsFromMessage,
-  selectFollowUpTopic,
-} from "@/lib/din/follow-up";
+import { extractTopicsFromMessage } from "@/lib/din/follow-up";
+import { selectRecallTopic } from "@/lib/din/memory-recall";
 import {
   sortLongTermMemories,
   sortShortTermMemories,
 } from "@/lib/din/memory-priority";
 import { USER_DISPLAY_NAME } from "@/lib/din/user-display-name";
 import type { DinMemory, StoredChatMessage } from "@/types/din-memory";
-import type { FollowUpTopic } from "@/types/follow-up";
 
 export type ProactiveOpenerSource =
-  | "follow_up"
+  | "memory_recall"
   | "memory"
   | "recent_chat"
   | "session";
@@ -74,15 +71,6 @@ function daysSince(iso: string, now: Date): number {
   return (now.getTime() - new Date(iso).getTime()) / DAY_MS;
 }
 
-function getLastTouchedAt(topic: FollowUpTopic): string {
-  if (!topic.lastFollowedUpAt) return topic.lastMentionedAt;
-
-  return new Date(topic.lastFollowedUpAt).getTime() >
-    new Date(topic.lastMentionedAt).getTime()
-    ? topic.lastFollowedUpAt
-    : topic.lastMentionedAt;
-}
-
 function formatRecentConversation(messages: StoredChatMessage[], limit = 8): string {
   if (messages.length === 0) return "（なし）";
 
@@ -98,20 +86,6 @@ function formatRecentConversation(messages: StoredChatMessage[], limit = 8): str
 function pickRandom<T>(items: T[]): T | null {
   if (items.length === 0) return null;
   return items[Math.floor(Math.random() * items.length)] ?? null;
-}
-
-function resolveStartupFollowUp(
-  memory: DinMemory,
-  excludeSeeds: Set<string>,
-  now: Date,
-): FollowUpTopic | null {
-  const candidates = memory.followUpTopics.filter((topic) => {
-    if (excludeSeeds.has(normalizeSeed(topic.content))) return false;
-    if (topic.mentionCount < 1) return false;
-    return daysSince(getLastTouchedAt(topic), now) >= 1;
-  });
-
-  return selectFollowUpTopic(candidates, memory.lastFollowUpTopicId);
 }
 
 function selectMemorySeed(memory: DinMemory, excludeSeeds: Set<string>): string | null {
@@ -177,13 +151,17 @@ export function resolveStartupProactiveOpener(
     userDisplayName: USER_DISPLAY_NAME,
   };
 
-  const followUp = resolveStartupFollowUp(memory, excludeSeeds, now);
-  if (followUp) {
+  const recall = selectRecallTopic(memory.followUpTopics, {
+    lastTopicId: memory.lastFollowUpTopicId,
+    excludeSeeds,
+    now,
+  });
+  if (recall) {
     return {
       ...base,
-      source: "follow_up",
-      seedTopic: followUp.content,
-      followUpTopicId: followUp.id,
+      source: "memory_recall",
+      seedTopic: recall.content,
+      followUpTopicId: recall.id,
     };
   }
 

@@ -7,6 +7,7 @@ import {
   clearAllMemory,
   formatLastConversation,
   loadMemory,
+  removeFollowUpTopic,
   removeMemoryItem,
   updateMemory,
 } from "@/lib/din/memory";
@@ -19,6 +20,7 @@ import {
   getRelationshipLabel,
 } from "@/lib/din/session-context";
 import type { DinMemory } from "@/types/din-memory";
+import type { FollowUpTopic } from "@/types/follow-up";
 import type { MemoryItem } from "@/types/memory-item";
 
 type MemoryBookProps = {
@@ -145,6 +147,70 @@ function StoredMemoryList({
   );
 }
 
+type RecallTopicListProps = {
+  topics: FollowUpTopic[];
+  onDelete: (id: string) => void;
+};
+
+function RecallTopicList({ topics, onDelete }: RecallTopicListProps) {
+  return (
+    <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <div>
+        <h2 className="text-base font-semibold text-emerald-400">
+          Recall 話題
+          <span className="ml-2 text-sm font-normal text-zinc-500">
+            ({topics.length}件)
+          </span>
+        </h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          Din が続きを気にしている話題。起動時に自然に尋ねる候補。
+        </p>
+      </div>
+
+      {topics.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-3">
+          <p className="text-sm text-zinc-500">
+            まだ Recall 話題はない。会話の中で Din が気になった話題がここに蓄積される。
+          </p>
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {topics.map((topic) => (
+            <li
+              key={topic.id}
+              className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-sm leading-6 text-zinc-100">{topic.content}</p>
+                  <div className="flex flex-wrap gap-2 text-xs text-zinc-500">
+                    <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                      重要度 {topic.importance}/5
+                    </span>
+                    <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                      言及 {topic.mentionCount}回
+                    </span>
+                    <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                      質問 {topic.askedCount}回
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDelete(topic.id)}
+                  className="shrink-0 rounded-xl border border-red-500/40 px-3 py-2 text-xs text-red-200 transition hover:bg-red-500/10"
+                >
+                  削除
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function EditableList({
   label,
   items,
@@ -244,6 +310,12 @@ export default function MemoryBook({
     onMemoryChange?.();
   }
 
+  function handleDeleteRecallTopic(id: string) {
+    removeFollowUpTopic(id);
+    setMemory(loadMemory());
+    onMemoryChange?.();
+  }
+
   function handleClearAll() {
     const confirmed = window.confirm(
       "すべての記憶を削除します。プロフィール、会話回数、チャット履歴が初期化されます。よろしいですか？",
@@ -294,6 +366,9 @@ export default function MemoryBook({
   const relationship = getRelationshipFromCount(memory.conversationCount);
   const longTermMemories = sortLongTermMemories(memory.longTermMemories);
   const shortTermMemories = sortShortTermMemories(memory.shortTermMemories);
+  const recallTopics = [...memory.followUpTopics].sort(
+    (left, right) => right.importance - left.importance,
+  );
 
   return (
     <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
@@ -387,6 +462,8 @@ export default function MemoryBook({
               }
             />
           </section>
+
+          <RecallTopicList topics={recallTopics} onDelete={handleDeleteRecallTopic} />
 
           <StoredMemoryList
             title="長期記憶"

@@ -133,7 +133,7 @@ export async function POST(request: Request) {
       favoriteFoods: [],
     };
 
-    const { content, remembered, profile, newMemoryItems } =
+    const { content, remembered, profile, newMemoryItems, newFollowUpRecalls } =
       parseMemoryFromResponse(rawContent, currentProfile);
 
     if (!content) {
@@ -151,6 +151,8 @@ export async function POST(request: Request) {
       remembered,
       userProfile: remembered ? profile : undefined,
       newMemoryItems: newMemoryItems.length > 0 ? newMemoryItems : undefined,
+      newFollowUpRecalls:
+        newFollowUpRecalls.length > 0 ? newFollowUpRecalls : undefined,
       referencedMemoryIds: memoryPrompt?.referencedMemoryIds,
       followUpTopicId: body.followUpTopicId,
     });
