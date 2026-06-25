@@ -31,6 +31,7 @@ import { getJournalDateJst } from "@/lib/din/journal-date";
 import {
   ensureDailyJournal,
 } from "@/lib/din/journal-client";
+import { revealAssistantBubbles } from "@/lib/din/chat-bubble-reveal";
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
 import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
@@ -225,6 +226,7 @@ export default function Chat({
 
         if (proactiveOpener) {
           try {
+            setIsTyping(true);
             const proactiveReply = await requestStartupProactiveMessage(
               profile,
               proactiveOpener,
@@ -233,17 +235,23 @@ export default function Chat({
             if (cancelled) return;
 
             recordProactiveOpenerUsed(proactiveOpener);
+            setMessages(savedMessages);
 
-            setMessages([
-              ...savedMessages,
-              {
-                id: generateId(),
-                role: "assistant",
-                content: proactiveReply.content,
+            await revealAssistantBubbles(proactiveReply.content, {
+              remembered: proactiveReply.remembered,
+              onTypingChange: setIsTyping,
+              appendMessage: (message) => {
+                if (cancelled) return;
+                setMessages((prev) => [...prev, message]);
               },
-            ]);
+              shouldCancel: () => cancelled,
+            });
           } catch {
             setMessages(savedMessages);
+          } finally {
+            if (!cancelled) {
+              setIsTyping(false);
+            }
           }
         } else {
           setMessages(savedMessages);
@@ -255,17 +263,20 @@ export default function Chat({
       }
 
       try {
+        setIsTyping(true);
         const greeting = await requestOpeningMessage(profile);
 
         if (cancelled) return;
 
-        setMessages([
-          {
-            id: generateId(),
-            role: "assistant",
-            content: greeting.content,
+        await revealAssistantBubbles(greeting.content, {
+          remembered: greeting.remembered,
+          onTypingChange: setIsTyping,
+          appendMessage: (message) => {
+            if (cancelled) return;
+            setMessages((prev) => [...prev, message]);
           },
-        ]);
+          shouldCancel: () => cancelled,
+        });
         recordSessionVisit();
       } catch (bootstrapError) {
         if (cancelled) return;
@@ -275,15 +286,17 @@ export default function Chat({
             ? bootstrapError.message
             : "挨拶の取得に失敗しました。";
         setError(message);
-        setMessages([
-          {
-            id: "fallback",
-            role: "assistant",
-            content: "戻ったか。",
+        await revealAssistantBubbles("戻ったか。", {
+          onTypingChange: setIsTyping,
+          appendMessage: (assistantMessage) => {
+            if (cancelled) return;
+            setMessages((prev) => [...prev, assistantMessage]);
           },
-        ]);
+          shouldCancel: () => cancelled,
+        });
       } finally {
         if (!cancelled) {
+          setIsTyping(false);
           setIsBootstrapping(false);
         }
       }
@@ -333,14 +346,14 @@ export default function Chat({
         setUserProfile(reply.userProfile);
       }
 
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: "assistant",
-        content: reply.content,
+      await revealAssistantBubbles(reply.content, {
         remembered: reply.remembered,
-      };
+        onTypingChange: setIsTyping,
+        appendMessage: (message) => {
+          setMessages((prev) => [...prev, message]);
+        },
+      });
 
-      setMessages((prev) => [...prev, assistantMessage]);
       recordLastConversation();
       setInput("");
       requestAnimationFrame(() => {
@@ -493,7 +506,7 @@ export default function Chat({
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="メッセージを入力..."
-            disabled={isBootstrapping}
+            disabled={isBootstrapping || isTyping}
             className="max-h-40 min-h-[48px] flex-1 resize-none rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500 disabled:opacity-50"
           />
           <button
