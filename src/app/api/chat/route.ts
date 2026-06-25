@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as ChatRequestBody;
     const requestGreeting = body.requestGreeting === true;
     const followUpTopic = body.followUpTopic?.trim() || undefined;
+    const proactiveOpener = body.proactiveOpener;
 
     if (!Array.isArray(body.messages)) {
       return NextResponse.json<ChatErrorResponse>(
@@ -90,9 +91,11 @@ export async function POST(request: Request) {
         ? [
             {
               role: "user" as const,
-              content: followUpTopic
-                ? "フォローアップを返せ。"
-                : "挨拶を返せ。",
+              content: proactiveOpener
+                ? "自発的な話しかけを返せ。"
+                : followUpTopic
+                  ? "フォローアップを返せ。"
+                  : "挨拶を返せ。",
             },
           ]
         : body.messages.map((message) => ({
@@ -105,15 +108,14 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content: buildDinSystemPrompt(
-            sessionContext,
-            memoryPrompt?.text,
+          content: buildDinSystemPrompt(sessionContext, memoryPrompt?.text, {
             followUpTopic,
-          ),
+            proactiveOpener,
+          }),
         },
         ...completionMessages,
       ],
-      temperature: 0.6,
+      temperature: proactiveOpener ? 0.75 : 0.6,
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();

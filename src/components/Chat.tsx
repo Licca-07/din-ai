@@ -13,7 +13,8 @@ import {
   recordLastConversation,
   recordTopicMentionsFromMessage,
   recordTopicsFromMemoryItems,
-  resolveSessionFollowUp,
+  resolveStartupProactiveOpener,
+  recordProactiveOpenerUsed,
   saveChatHistory,
   saveUserProfile,
 } from "@/lib/din/memory";
@@ -29,6 +30,7 @@ import { getJournalDateJst } from "@/lib/din/journal-date";
 import {
   ensureDailyJournal,
 } from "@/lib/din/journal-client";
+import type { ProactiveOpener } from "@/lib/din/proactive-opener";
 import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
@@ -52,6 +54,7 @@ async function requestDinReply(body: {
   userProfile: UserProfile;
   followUpTopic?: string;
   followUpTopicId?: string;
+  proactiveOpener?: ProactiveOpener;
 }): Promise<DinReply> {
   const sessionContext = buildSessionContext({
     isGreeting: body.requestGreeting ?? false,
@@ -72,6 +75,7 @@ async function requestDinReply(body: {
       requestGreeting: body.requestGreeting,
       followUpTopic: body.followUpTopic,
       followUpTopicId: body.followUpTopicId,
+      proactiveOpener: body.proactiveOpener,
     }),
   });
 
@@ -119,14 +123,23 @@ async function requestDinReply(body: {
 }
 
 async function requestOpeningMessage(profile: UserProfile): Promise<DinReply> {
-  const followUp = resolveSessionFollowUp();
-
   return requestDinReply({
     messages: [],
     requestGreeting: true,
     userProfile: profile,
-    followUpTopic: followUp?.content,
-    followUpTopicId: followUp?.id,
+  });
+}
+
+async function requestStartupProactiveMessage(
+  profile: UserProfile,
+  proactiveOpener: ProactiveOpener,
+): Promise<DinReply> {
+  return requestDinReply({
+    messages: [],
+    requestGreeting: true,
+    userProfile: profile,
+    proactiveOpener,
+    followUpTopicId: proactiveOpener.followUpTopicId,
   });
 }
 
@@ -200,26 +213,25 @@ export default function Chat({
         ).length;
         syncConversationCountFromHistory(userMessageCount);
 
-        const followUp = resolveSessionFollowUp();
+        const proactiveOpener = resolveStartupProactiveOpener(loadMemory());
 
-        if (followUp) {
+        if (proactiveOpener) {
           try {
-            const followUpReply = await requestDinReply({
-              messages: [],
-              requestGreeting: true,
-              userProfile: profile,
-              followUpTopic: followUp.content,
-              followUpTopicId: followUp.id,
-            });
+            const proactiveReply = await requestStartupProactiveMessage(
+              profile,
+              proactiveOpener,
+            );
 
             if (cancelled) return;
+
+            recordProactiveOpenerUsed(proactiveOpener);
 
             setMessages([
               ...savedMessages,
               {
                 id: generateId(),
                 role: "assistant",
-                content: followUpReply.content,
+                content: proactiveReply.content,
               },
             ]);
           } catch {

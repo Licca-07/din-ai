@@ -477,6 +477,11 @@ export function resolveSessionFollowUp() {
   return resolveFollowUpTopic(loadMemory());
 }
 
+export {
+  recordProactiveOpenerUsed,
+  resolveStartupProactiveOpener,
+} from "@/lib/din/proactive-opener";
+
 export function recordFollowUpTopicAsked(topicId: string): void {
   updateMemory((memory) => ({
     ...memory,

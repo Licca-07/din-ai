@@ -1,3 +1,4 @@
+import type { ProactiveOpener } from "@/lib/din/proactive-opener";
 import type { DinSessionContext } from "@/lib/din/session-context";
 import type { MemoryItem } from "@/types/memory-item";
 import type { UserProfile } from "@/types/user-profile";
@@ -18,6 +19,7 @@ export type ChatRequestBody = {
   requestGreeting?: boolean;
   followUpTopic?: string;
   followUpTopicId?: string;
+  proactiveOpener?: ProactiveOpener;
 };
 
 export type ChatResponseBody = {
