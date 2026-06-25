@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { generateId } from "@/lib/generate-id";
 import {
   addMemoryItems,
@@ -25,8 +25,11 @@ import {
   buildSessionContext,
   recordSessionVisit,
 } from "@/lib/din/session-context";
+import { getJournalDateJst } from "@/lib/din/journal-date";
+import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
+import type { DinJournal } from "@/types/journal";
 import type { MemoryItem } from "@/types/memory-item";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -39,6 +42,30 @@ type DinReply = {
   newMemoryItems?: MemoryItem[];
   referencedMemoryIds?: string[];
 };
+
+async function ensureDailyJournal(
+  requestRef: MutableRefObject<{ date: string; promise: Promise<void> } | null>,
+  onUpdated?: () => void,
+): Promise<void> {
+  const journalDate = getJournalDateJst();
+  const inFlight = requestRef.current;
+
+  if (inFlight?.date === journalDate) {
+    return inFlight.promise;
+  }
+
+  const promise = (async () => {
+    try {
+      await fetch("/api/journals/generate", { method: "POST" });
+      onUpdated?.();
+    } catch {
+      // 日記生成失敗はチャット開始を妨げない
+    }
+  })();
+
+  requestRef.current = { date: journalDate, promise };
+  return promise;
+}
 
 async function requestDinReply(body: {
   messages: ChatMessage[];
@@ -124,15 +151,57 @@ async function requestOpeningMessage(profile: UserProfile): Promise<DinReply> {
   });
 }
 
-export default function Chat() {
+export default function Chat({
+  onJournalUpdated,
+}: {
+  onJournalUpdated?: () => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [todayJournal, setTodayJournal] = useState<DinJournal | null>(null);
+  const [todayJournalDate, setTodayJournalDate] = useState(getJournalDateJst());
+  const [isJournalLoading, setIsJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const [isJournalOpen, setIsJournalOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const journalRequestRef = useRef<{
+    date: string;
+    promise: Promise<void>;
+  } | null>(null);
+
+  const loadTodayJournal = useCallback(async () => {
+    setIsJournalLoading(true);
+    setJournalError(null);
+
+    try {
+      const response = await fetch("/api/journals/today", { cache: "no-store" });
+      const data = (await response.json()) as
+        | { journalDate: string; journal: DinJournal | null }
+        | { error: string };
+
+      if (!response.ok) {
+        throw new Error("error" in data ? data.error : "日記の取得に失敗しました。");
+      }
+
+      if ("journalDate" in data) {
+        setTodayJournalDate(data.journalDate);
+        setTodayJournal(data.journal);
+      }
+    } catch (loadError) {
+      const message =
+        loadError instanceof Error
+          ? loadError.message
+          : "日記の取得に失敗しました。";
+      setJournalError(message);
+    } finally {
+      setIsJournalLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -144,6 +213,9 @@ export default function Chat() {
     async function bootstrap() {
       setIsBootstrapping(true);
       setError(null);
+
+      await ensureDailyJournal(journalRequestRef, onJournalUpdated);
+      void loadTodayJournal();
 
       const profile = ensureUserProfile();
       setUserProfile(profile);
@@ -232,7 +304,7 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadTodayJournal, onJournalUpdated]);
 
   useEffect(() => {
     if (isBootstrapping || messages.length === 0) return;
@@ -309,6 +381,16 @@ export default function Chat() {
     }
   }
 
+  function openJournalSheet() {
+    setIsJournalOpen(true);
+    void loadTodayJournal();
+  }
+
+  const journalPreview = todayJournal?.content
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 96);
+
   return (
     <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 px-4 py-4">
@@ -316,15 +398,48 @@ export default function Chat() {
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-zinc-950">
             D
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">Din AI</h1>
             <p className="text-sm text-zinc-400">OpenAI API 接続済み</p>
           </div>
+          <button
+            type="button"
+            onClick={openJournalSheet}
+            className="shrink-0 rounded-xl border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 transition hover:border-emerald-500/60 hover:bg-zinc-900"
+          >
+            日記
+          </button>
         </div>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
+          {!isBootstrapping && todayJournal && (
+            <button
+              type="button"
+              onClick={openJournalSheet}
+              className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-left transition hover:border-emerald-500/40 hover:bg-emerald-500/15"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-emerald-400">今日の日記</p>
+                <span className="text-xs text-zinc-400">開く</span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-100">
+                {journalPreview}
+                {todayJournal.content.length > 96 ? "…" : ""}
+              </p>
+            </button>
+          )}
+
+          {!isBootstrapping && !isJournalLoading && !todayJournal && !journalError && (
+            <button
+              type="button"
+              onClick={openJournalSheet}
+              className="rounded-2xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-left text-sm text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-300"
+            >
+              今日の日記はまだない。タップして確認する。
+            </button>
+          )}
           {isBootstrapping && messages.length === 0 && (
             <div className="flex justify-start">
               <div className="rounded-2xl bg-zinc-800 px-4 py-3 text-sm text-zinc-400">
@@ -401,6 +516,15 @@ export default function Chat() {
           </button>
         </form>
       </footer>
+
+      <TodayJournalSheet
+        open={isJournalOpen}
+        journalDate={todayJournalDate}
+        journal={todayJournal}
+        isLoading={isJournalLoading}
+        error={journalError}
+        onClose={() => setIsJournalOpen(false)}
+      />
     </div>
   );
 }

@@ -2,22 +2,32 @@
 
 import { useEffect, useState } from "react";
 
+import JournalBook from "@/components/JournalBook";
 import {
   clearAllMemory,
   formatLastConversation,
   loadMemory,
+  removeMemoryItem,
   updateMemory,
 } from "@/lib/din/memory";
+import {
+  sortLongTermMemories,
+  sortShortTermMemories,
+} from "@/lib/din/memory-priority";
 import {
   getRelationshipFromCount,
   getRelationshipLabel,
 } from "@/lib/din/session-context";
 import type { DinMemory } from "@/types/din-memory";
+import type { MemoryItem } from "@/types/memory-item";
 
 type MemoryBookProps = {
   memoryRevision: number;
+  journalRevision: number;
   onMemoryChange?: () => void;
 };
+
+type MemoryBookSection = "memory" | "journal";
 
 type EditableListProps = {
   label: string;
@@ -25,6 +35,115 @@ type EditableListProps = {
   placeholder: string;
   onChange: (items: string[]) => void;
 };
+
+function formatMemoryExpiry(expiresAt: string | null): string | null {
+  if (!expiresAt) return null;
+
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatMemoryCategory(category: string): string | null {
+  const labels: Record<string, string> = {
+    occupation: "職業",
+    hobby: "趣味",
+    favorite: "好きなもの",
+    general: "一般",
+    context: "文脈",
+  };
+
+  return labels[category] ?? category;
+}
+
+type StoredMemoryListProps = {
+  title: string;
+  description: string;
+  emptyMessage: string;
+  items: MemoryItem[];
+  showExpiry?: boolean;
+  onDelete: (id: string) => void;
+};
+
+function StoredMemoryList({
+  title,
+  description,
+  emptyMessage,
+  items,
+  showExpiry = false,
+  onDelete,
+}: StoredMemoryListProps) {
+  return (
+    <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <div>
+        <h2 className="text-base font-semibold text-emerald-400">
+          {title}
+          <span className="ml-2 text-sm font-normal text-zinc-500">
+            ({items.length}件)
+          </span>
+        </h2>
+        <p className="mt-1 text-sm text-zinc-400">{description}</p>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-3">
+          <p className="text-sm text-zinc-500">{emptyMessage}</p>
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {items.map((item) => {
+            const categoryLabel = formatMemoryCategory(item.category);
+            const expiryLabel = showExpiry
+              ? formatMemoryExpiry(item.expiresAt)
+              : null;
+
+            return (
+              <li
+                key={item.id}
+                className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <p className="text-sm leading-6 text-zinc-100">{item.content}</p>
+                    <div className="flex flex-wrap gap-2 text-xs text-zinc-500">
+                      <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                        重要度 {item.importance}/5
+                      </span>
+                      {categoryLabel && (
+                        <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                          {categoryLabel}
+                        </span>
+                      )}
+                      {expiryLabel && (
+                        <span className="rounded-full border border-zinc-700 px-2 py-0.5">
+                          期限 {expiryLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(item.id)}
+                    className="shrink-0 rounded-xl border border-red-500/40 px-3 py-2 text-xs text-red-200 transition hover:bg-red-500/10"
+                  >
+                    削除
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function EditableList({
   label,
@@ -103,9 +222,11 @@ function EditableList({
 
 export default function MemoryBook({
   memoryRevision,
+  journalRevision,
   onMemoryChange,
 }: MemoryBookProps) {
   const [memory, setMemory] = useState<DinMemory | null>(null);
+  const [section, setSection] = useState<MemoryBookSection>("memory");
 
   useEffect(() => {
     setMemory(loadMemory());
@@ -114,6 +235,12 @@ export default function MemoryBook({
   function persistMemory(updater: (current: DinMemory) => DinMemory) {
     const next = updateMemory(updater);
     setMemory(next);
+    onMemoryChange?.();
+  }
+
+  function handleDeleteMemoryItem(id: string) {
+    removeMemoryItem(id);
+    setMemory(loadMemory());
     onMemoryChange?.();
   }
 
@@ -144,16 +271,48 @@ export default function MemoryBook({
     );
   }
 
+  if (section === "journal") {
+    return (
+      <div className="flex h-full flex-col bg-zinc-950">
+        <div className="border-b border-zinc-800 px-4 py-3">
+          <div className="mx-auto flex max-w-3xl gap-2">
+            <SectionTab
+              label="記憶"
+              active={false}
+              onClick={() => setSection("memory")}
+            />
+            <SectionTab label="日記" active onClick={() => setSection("journal")} />
+          </div>
+        </div>
+        <div className="min-h-0 flex-1">
+          <JournalBook refreshKey={journalRevision} />
+        </div>
+      </div>
+    );
+  }
+
   const relationship = getRelationshipFromCount(memory.conversationCount);
+  const longTermMemories = sortLongTermMemories(memory.longTermMemories);
+  const shortTermMemories = sortShortTermMemories(memory.shortTermMemories);
 
   return (
     <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 px-4 py-4">
-        <div className="mx-auto max-w-3xl">
-          <h1 className="text-lg font-semibold">記憶帳</h1>
-          <p className="text-sm text-zinc-400">
-            Din がユーザーについて覚えている情報
-          </p>
+        <div className="mx-auto max-w-3xl space-y-3">
+          <div className="flex gap-2">
+            <SectionTab label="記憶" active onClick={() => setSection("memory")} />
+            <SectionTab
+              label="日記"
+              active={false}
+              onClick={() => setSection("journal")}
+            />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold">記憶帳</h1>
+            <p className="text-sm text-zinc-400">
+              Din がユーザーについて覚えている情報
+            </p>
+          </div>
         </div>
       </header>
 
@@ -228,6 +387,23 @@ export default function MemoryBook({
               }
             />
           </section>
+
+          <StoredMemoryList
+            title="長期記憶"
+            description="会話の中で Din が覚えた内容。重要度の高いものほど返答に優先して使われる。"
+            emptyMessage="まだ長期記憶はない。会話を続けると、Din がここに覚えていく。"
+            items={longTermMemories}
+            onDelete={handleDeleteMemoryItem}
+          />
+
+          <StoredMemoryList
+            title="一時記憶"
+            description="直近の文脈用。通常7日で期限切れになる。"
+            emptyMessage="まだ一時記憶はない。"
+            items={shortTermMemories}
+            showExpiry
+            onDelete={handleDeleteMemoryItem}
+          />
 
           <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
             <h2 className="text-base font-semibold text-emerald-400">関係性</h2>
@@ -310,5 +486,27 @@ export default function MemoryBook({
         </div>
       </main>
     </div>
+  );
+}
+
+type SectionTabProps = {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+};
+
+function SectionTab({ label, active, onClick }: SectionTabProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+        active
+          ? "bg-emerald-500 text-zinc-950"
+          : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

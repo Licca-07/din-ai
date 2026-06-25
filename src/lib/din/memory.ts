@@ -325,6 +325,14 @@ export function markMemoryItemsReferenced(ids: string[], now = new Date()): void
   }));
 }
 
+export function removeMemoryItem(id: string): void {
+  updateMemory((memory) => ({
+    ...memory,
+    longTermMemories: memory.longTermMemories.filter((item) => item.id !== id),
+    shortTermMemories: memory.shortTermMemories.filter((item) => item.id !== id),
+  }));
+}
+
 export function loadUserProfile(): UserProfile {
   return loadMemory().profile;
 }

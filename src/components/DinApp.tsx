@@ -15,6 +15,7 @@ const tabs: { id: DinMemoryTab; label: string }[] = [
 export default function DinApp() {
   const [activeTab, setActiveTab] = useState<DinMemoryTab>("chat");
   const [memoryRevision, setMemoryRevision] = useState(0);
+  const [journalRevision, setJournalRevision] = useState(0);
   const [memoryReady, setMemoryReady] = useState(false);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
@@ -90,10 +91,14 @@ export default function DinApp() {
 
       <div className="min-h-0 flex-1">
         {activeTab === "chat" ? (
-          <Chat key={memoryRevision} />
+          <Chat
+            key={memoryRevision}
+            onJournalUpdated={() => setJournalRevision((value) => value + 1)}
+          />
         ) : (
           <MemoryBook
             memoryRevision={memoryRevision}
+            journalRevision={journalRevision}
             onMemoryChange={handleMemoryChange}
           />
         )}
