@@ -141,7 +141,9 @@ export async function POST(request: Request) {
         ? 0.75
         : conversationStance.intent === "comfort_request"
           ? 0.62
-          : conversationStance.intent === "pushback"
+          : conversationStance.intent === "companion_suggest"
+            ? 0.68
+            : conversationStance.intent === "pushback"
             ? 0.58
             : conversationStance.intent === "profile_share"
               ? 0.52

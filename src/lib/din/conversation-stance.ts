@@ -9,13 +9,14 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 通常 */
+  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 相棒提案 / 通常 */
   intent:
     | "default"
     | "shared_moment"
     | "comfort_request"
     | "profile_share"
-    | "pushback";
+    | "pushback"
+    | "companion_suggest";
 };
 
 const CASUAL_USER_PATTERN =
@@ -29,13 +30,21 @@ const TASK_OR_FACT_PATTERN =
 
 /** 助言を求めず、出来事や気持ちを置いている */
 const SHARED_MOMENT_PATTERN =
-  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい|鬱|うつ|休職|心配|誰がいつ|わからないね/i;
+  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|眠く|眠い|ふわ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい|鬱|うつ|休職|心配|誰がいつ|わからないね/i;
 
 const SHARED_MOMENT_CONTINUATION_PATTERN =
-  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで|休職|鬱|うつ|友達|心配/i;
+  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで|休職|鬱|うつ|友達|心配|会見|記者|詰め|仕事|土曜|遅く|3日/i;
 
 const ADVICE_SEEKING_PATTERN =
-  /どうすれば|どうしたら|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
+  /どう(?:すれば|したら|.*?(?:いい|思う|休め|対処))|(?:何|なに)(?:を|が)(?:すれば|したら|いい)|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
+
+/** ユーザーが Din の具体的な提案・意見を求めている */
+const ADVICE_REQUEST_PATTERN =
+  /どう(?:すれば|したら|.*?(?:いい|思う|休め|対処))|(?:何|なに)(?:を|が)(?:すれば|したら|いい)|(?:教えて|アドバイス)(?:くれ|ほしい)?|どう思う|どう思い/i;
+
+/** ユーザーが自分のアイデアを試しに出している */
+const IDEA_BOUNCE_PATTERN =
+  /(?:たり|てみ|試し|にする|はどう|どう(?:かな|思う)?|いいかな)[？?]?$/i;
 
 /** ユーザーが短い守り・慰めの実行を求めている */
 const COMFORT_REQUEST_PATTERN =
@@ -60,6 +69,7 @@ export function isSharedMoment(input: string): boolean {
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isComfortRequest(normalized)) return false;
+  if (isCompanionSuggest(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
 
@@ -82,6 +92,23 @@ export function isPushback(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
   return PUSHBACK_PATTERN.test(normalized);
+}
+
+export function isAdviceRequest(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  return ADVICE_REQUEST_PATTERN.test(normalized);
+}
+
+export function isIdeaBounce(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (isAdviceRequest(normalized)) return false;
+  return IDEA_BOUNCE_PATTERN.test(normalized);
+}
+
+export function isCompanionSuggest(input: string): boolean {
+  return isAdviceRequest(input) || isIdeaBounce(input);
 }
 
 function isComfortRequestContinuation(
@@ -126,6 +153,8 @@ export const PROFILE_SHARE_MAX_TOKENS = 56;
 export const PROFILE_SHARE_MAX_CHARS = 16;
 export const PUSHBACK_MAX_TOKENS = 40;
 export const PUSHBACK_MAX_CHARS = 24;
+export const COMPANION_SUGGEST_MAX_TOKENS = 72;
+export const COMPANION_SUGGEST_MAX_CHARS = 60;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -152,6 +181,8 @@ export function maxTokensForIntent(
       return PROFILE_SHARE_MAX_TOKENS;
     case "pushback":
       return PUSHBACK_MAX_TOKENS;
+    case "companion_suggest":
+      return COMPANION_SUGGEST_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -193,6 +224,10 @@ function resolveRegister(
     intent === "pushback"
   ) {
     return "quiet";
+  }
+
+  if (intent === "companion_suggest") {
+    return "easygoing";
   }
 
   const weights: Record<DinConversationRegister, number> = {
@@ -272,6 +307,7 @@ function resolveIntent(
     return "comfort_request";
   }
   if (isProfileShare(userInput)) return "profile_share";
+  if (isCompanionSuggest(userInput)) return "companion_suggest";
   if (
     isSharedMoment(userInput) ||
     isSharedMomentContinuation(userInput, recentUserInputs)
@@ -289,7 +325,7 @@ export function resolveConversationStance(
   const intent = resolveIntent(userInput, recentUserInputs);
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
-    intent === "comfort_request"
+    intent === "comfort_request" || intent === "companion_suggest"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -343,8 +379,15 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
 
 const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
-  "ユーザー「地震が続くと怖いね・・・不安になる」→「……そうか。」",
+  "ユーザー「ふわ、急に眠くなった。画面見て疲れたのかな？」→「……そうか。」",
+  "ユーザー「3日連続で記者会見が入って遅くまで詰めていた」→「……詰めたな。」",
   "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。」",
+];
+
+const COMPANION_SUGGEST_EXAMPLES = [
+  "ユーザー「どう休めばいいと思う？」→「……画面を閉めろ。……風呂に入れ。」",
+  "ユーザー「アロマキャンドルを焚いたり？」→「……それもありだ。……布団に入れ。」",
+  "ユーザー「何をすればいい？」→「……今日はここまでにしろ。……水でも飲め。」",
 ];
 
 const COMFORT_REQUEST_EXAMPLES = [
@@ -371,7 +414,9 @@ function describeSharedMomentIntent(): string {
     "ユーザーは助言・調査・まとめ・慰めを求めていない。出来事や気持ちを置いているだけ。",
     "汎用アシスタント・カウンセラーの型で返すな。",
     "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
-    "- 「それは〜だ」「確かに〜」で始める評価型の1文も避ける",
+    "- 「それは〜だ」「大変だったな」などの評価型も避ける",
+    "- ユーザーの言い換え・要約（画面を見続けると疲れる、など）をしない",
+    "- 聞かれていない休憩・対策の提案をしない（休憩を取るといい、など）",
     "- ユーザーの要約・正論・対策の追加をしない",
     "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
     "",
@@ -428,6 +473,23 @@ function describePushbackIntent(): string {
   ].join("\n");
 }
 
+function describeCompanionSuggestIntent(): string {
+  return [
+    "### 今回は「相棒としての提案」（最優先）",
+    "ユーザーは Din の具体的な意見・提案を求めている。または自分のアイデアを試しに出している。",
+    "積極的に提案してよい。ただし汎用アシスタントの正論は禁止。",
+    "- 「リラックスできる時間を作る」「良い選択だ」などの空疎な一言で終わらない",
+    "- 今すぐできる具体的な行動を1〜2文で。Din 口調の言い切り",
+    "- 記憶帳（趣味・好きなもの）が自然に関連するなら1つだけ混ぜてよい",
+    "- 「それは〜だ」だけの評価型で終わらない。必ず提案を含める",
+    "- 長いリスト・理由説明・説教はしない",
+    "",
+    `制約: 1〜2文。合計${COMPANION_SUGGEST_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...COMPANION_SUGGEST_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeDefaultAntiAssistantRules(): string {
   return [
     "### 通常応答でも避ける型",
@@ -470,6 +532,14 @@ function describeIntentSpecificRules(stance: ConversationStance): string[] {
     ];
   }
 
+  if (stance.intent === "companion_suggest") {
+    return [
+      describeCompanionSuggestIntent(),
+      "今回のノリ: ちょっとノリがいい Din（提案依頼時は easygoing 固定）",
+      "- 提案依頼時は上記「具体的な提案」を最優先。空疎な正論より優先する",
+    ];
+  }
+
   return [describeDefaultAntiAssistantRules()];
 }
 
@@ -489,7 +559,9 @@ export function describeConversationStance(stance: ConversationStance): string {
     "",
     stance.intent === "comfort_request"
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
-      : stance.intent === "pushback"
+      : stance.intent === "companion_suggest"
+        ? "受け止め: 具体的な提案で返す。評価だけ・空疎な正論だけで終えない。"
+        : stance.intent === "pushback"
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
@@ -498,7 +570,9 @@ export function describeConversationStance(stance: ConversationStance): string {
     "### 今回の返答で守ること",
     "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
     "- 感情の言い換え・ラベル付け＋助言の型は使わない",
-    "- 1ターンで完全な結論・まとめ・解決策を出さない",
+    stance.intent === "companion_suggest"
+      ? "- 今回は具体的な提案を出してよい（上記「相棒としての提案」を優先）"
+      : "- 1ターンで完全な結論・まとめ・解決策を出さない",
     usesFixedIntent
       ? null
       : "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
