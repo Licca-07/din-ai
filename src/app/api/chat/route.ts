@@ -129,13 +129,15 @@ export async function POST(request: Request) {
       ],
       temperature: proactiveOpener
         ? 0.75
-        : modelMode === "research"
-          ? 0.52
-          : conversationStance.register === "easygoing"
-            ? 0.72
-            : conversationStance.register === "quiet"
-              ? 0.55
-              : 0.6,
+        : conversationStance.intent === "shared_moment"
+          ? 0.58
+          : modelMode === "research"
+            ? 0.52
+            : conversationStance.register === "easygoing"
+              ? 0.72
+              : conversationStance.register === "quiet"
+                ? 0.55
+                : 0.6,
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();

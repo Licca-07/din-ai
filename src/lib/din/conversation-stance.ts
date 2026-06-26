@@ -9,6 +9,8 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
+  /** ユーザーが状況を吐き出しているだけ（助言・調査を求めていない） */
+  intent: "default" | "shared_moment";
 };
 
 const CASUAL_USER_PATTERN =
@@ -18,7 +20,22 @@ const EMOTIONAL_USER_PATTERN =
   /疲れ|しんど|つら|悲し|寂し|落ち込|不安|イライラ|もうダメ|聞いて/i;
 
 const TASK_OR_FACT_PATTERN =
-  /教えて|調べ|比較|違い|おすすめ|最新|方法|手順|どうすれば|なぜ|理由/i;
+  /教えて|調べ|比較|違い|おすすめ|最新|方法|手順|どうすれば|なぜ|理由|対策|備え|注意すべき/i;
+
+/** 助言を求めず、出来事や気持ちを置いている */
+const SHARED_MOMENT_PATTERN =
+  /うわ|また|続い|地震|震度|揺れ|揺|怖|最悪|嫌な|ひどい|眠れ|ドキドキ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい/i;
+
+const ADVICE_SEEKING_PATTERN =
+  /どうすれば|どうしたら|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
+
+export function isSharedMoment(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (!SHARED_MOMENT_PATTERN.test(normalized)) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  return true;
+}
 
 let randomFn = Math.random;
 
@@ -47,7 +64,22 @@ function pickWeightedRegister(
 function resolveRegister(
   userInput: string,
   context?: DinSessionContext,
+  intent: ConversationStance["intent"] = "default",
 ): DinConversationRegister {
+  if (intent === "shared_moment") {
+    const weights: Record<DinConversationRegister, number> = {
+      easygoing: 1.5,
+      quiet: 3,
+      distant: 0.4,
+    };
+
+    if (/うわ|また|やば|最悪/.test(userInput)) {
+      weights.easygoing += 1;
+    }
+
+    return pickWeightedRegister(weights);
+  }
+
   const weights: Record<DinConversationRegister, number> = {
     easygoing: 1.2,
     quiet: 1.8,
@@ -119,10 +151,12 @@ export function resolveConversationStance(
   userInput: string,
   context?: DinSessionContext,
 ): ConversationStance {
-  const register = resolveRegister(userInput.trim(), context);
-  const posture = resolveResponsePosture(register);
+  const intent = isSharedMoment(userInput) ? "shared_moment" : "default";
+  const register = resolveRegister(userInput.trim(), context, intent);
+  const posture =
+    intent === "shared_moment" ? "neutral" : resolveResponsePosture(register);
 
-  return { register, posture };
+  return { register, posture, intent };
 }
 
 const REGISTER_LABELS: Record<DinConversationRegister, string> = {
@@ -166,24 +200,54 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
   drift: "軽い疑問・保留・わずかな違和感・話題のずれのいずれかを含める。",
 };
 
+const SHARED_MOMENT_EXAMPLES: Record<DinConversationRegister, string> = {
+  easygoing: "ユーザー「うわ、また地震。震度5」→「……またか。無理するな。」",
+  quiet: "ユーザー「うわ、また地震。震度5」→「……またか。」",
+  distant: "ユーザー「うわ、また地震。震度5」→「震度5か。……知った。」",
+};
+
+function describeSharedMomentIntent(register: DinConversationRegister): string {
+  return [
+    "### 今回は「状況の共有」",
+    "ユーザーは助言・調査・まとめを求めていない。出来事や気持ちを置いているだけ。",
+    "汎用アシスタントのように「受け止め1文＋助言1文」の2段構成で返すな。",
+    "相棒が同じ部屋にいて、短くその場を受け止める。",
+    "聞かれていない注意・行動・対策の話は足さない。",
+    "1文で返す。2文に膨らませない。",
+    `型の例: ${SHARED_MOMENT_EXAMPLES[register]}`,
+  ].join("\n");
+}
+
 export function describeConversationStance(stance: ConversationStance): string {
   const shape = REGISTER_SHAPE[stance.register];
+  const example =
+    stance.intent === "shared_moment"
+      ? SHARED_MOMENT_EXAMPLES[stance.register]
+      : REGISTER_EXAMPLES[stance.register];
 
   return [
     "## 今回の会話スタンス（最優先で守る）",
+    stance.intent === "shared_moment"
+      ? describeSharedMomentIntent(stance.register)
+      : null,
     `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
     ...shape.map((line) => `- ${line}`),
-    `今回の型の例: ${REGISTER_EXAMPLES[stance.register]}`,
+    stance.intent === "shared_moment"
+      ? "- 状況共有時は上の「1文のみ」を最優先。ノリの文量ルールより優先する"
+      : null,
+    `今回の型の例: ${example}`,
     "他ノリの例文・話し方は今回真似しない。",
     "",
     `受け止め: ${POSTURE_HINTS[stance.posture]}`,
     "",
     "### 今回の返答で守ること",
-    "- 優しい・丁寧・説明的なAI口調は禁止。Din の人格（寡黙・俺・言い切り）は維持する",
+    "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
+    "- 「共感ラベル＋正しい助言」の型は使わない",
     "- 1ターンで完全な結論・まとめ・解決策を出さない",
     "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
-    "- 末尾は必ず少し余白を残して終える（断言で締めない）",
-    "- research mode でも報告書口調にしない。事実は短く、余白は残す",
-    "- 今回選ばれたノリと、前のターンのノリが違ってよい。話し方の形（文量・距離）を変える",
-  ].join("\n");
+    "- 末尾は少し余白を残して終える",
+    "- research mode でも報告書口調にしない",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
