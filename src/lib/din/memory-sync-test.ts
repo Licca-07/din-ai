@@ -18,11 +18,13 @@ export function createMemorySyncTestPayload(runId: string): DinMemory {
         id: `test-user-${runId}`,
         role: "user",
         content: `${MEMORY_SYNC_TEST_MARKER} hello ${runId}`,
+        createdAt: now,
       },
       {
         id: `test-assistant-${runId}`,
         role: "assistant",
         content: `${MEMORY_SYNC_TEST_MARKER} ack ${runId}`,
+        createdAt: now,
       },
     ],
     longTermMemories: [

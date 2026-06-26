@@ -1,4 +1,5 @@
 import { generateId } from "@/lib/generate-id";
+import { createChatMessageTimestamp } from "@/lib/din/chat-message-time";
 import type { StoredChatMessage } from "@/types/din-memory";
 
 const BUBBLE_REVEAL_MIN_MS = 500;
@@ -62,6 +63,7 @@ export async function revealAssistantBubbles(
       id: generateId(),
       role: "assistant",
       content: bubbles[index],
+      createdAt: createChatMessageTimestamp(),
       remembered:
         index === bubbles.length - 1 ? options.remembered : undefined,
     });

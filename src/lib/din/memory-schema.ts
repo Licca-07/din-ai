@@ -6,6 +6,7 @@ import type {
   MemoryItemKind,
 } from "@/types/memory-item";
 import { normalizeFollowUpTopic } from "@/lib/din/follow-up";
+import { backfillChatHistoryTimestamps } from "@/lib/din/chat-message-time";
 import type { FollowUpTopic } from "@/types/follow-up";
 import type { UserProfile } from "@/types/user-profile";
 
@@ -76,6 +77,7 @@ export function isValidStoredMessage(value: unknown): value is StoredChatMessage
     (message.role === "user" || message.role === "assistant") &&
     typeof message.content === "string" &&
     message.content.trim().length > 0 &&
+    (message.createdAt === undefined || typeof message.createdAt === "string") &&
     (message.remembered === undefined || typeof message.remembered === "boolean")
   );
 }
@@ -95,11 +97,16 @@ export function isValidProfile(value: unknown): value is DinMemoryProfile {
 }
 
 export function normalizeMemory(value: Partial<DinMemory>): DinMemory {
+  const lastConversationAt = value.lastConversationAt ?? null;
+  const rawChatHistory = Array.isArray(value.chatHistory)
+    ? value.chatHistory.filter(isValidStoredMessage)
+    : [];
+
   return {
     profile: value.profile ?? DEFAULT_MEMORY.profile,
     conversationCount: value.conversationCount ?? 0,
-    lastConversationAt: value.lastConversationAt ?? null,
-    chatHistory: value.chatHistory ?? [],
+    lastConversationAt,
+    chatHistory: backfillChatHistoryTimestamps(rawChatHistory, lastConversationAt),
     longTermMemories: value.longTermMemories ?? [],
     shortTermMemories: value.shortTermMemories ?? [],
     followUpTopics: Array.isArray(value.followUpTopics)
@@ -193,7 +200,7 @@ export function normalizePartialMemory(value: unknown): DinMemory | null {
 
 export function parseMemory(value: unknown): DinMemory | null {
   if (isValidMemory(value)) {
-    return value;
+    return normalizeMemory(value);
   }
 
   return normalizePartialMemory(value);

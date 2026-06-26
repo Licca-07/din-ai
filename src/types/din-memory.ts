@@ -7,6 +7,7 @@ export type StoredChatMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  createdAt: string;
   remembered?: boolean;
 };
 

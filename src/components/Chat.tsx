@@ -1,7 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { generateId } from "@/lib/generate-id";
+import {
+  createChatMessageTimestamp,
+  formatChatDateDividerLabel,
+  formatMessageClockTime,
+  shouldShowChatDateDivider,
+} from "@/lib/din/chat-message-time";
 import {
   addMemoryItems,
   addFollowUpRecalls,
@@ -344,6 +350,7 @@ export default function Chat({
       id: generateId(),
       role: "user",
       content: trimmed,
+      createdAt: createChatMessageTimestamp(),
     };
 
     incrementConversationCount();
@@ -414,6 +421,17 @@ export default function Chat({
     .trim()
     .slice(0, 96);
 
+  const messageRows = useMemo(
+    () =>
+      messages.map((message, index) => ({
+        message,
+        showDateDivider: shouldShowChatDateDivider(messages, index),
+        dateLabel: formatChatDateDividerLabel(message.createdAt),
+        clockTime: formatMessageClockTime(message.createdAt),
+      })),
+    [messages],
+  );
+
   return (
     <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 px-4 py-4">
@@ -471,26 +489,48 @@ export default function Chat({
             </div>
           )}
 
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${
-                message.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
+          {messageRows.map(({ message, showDateDivider, dateLabel, clockTime }) => (
+            <Fragment key={message.id}>
+              {showDateDivider && (
+                <div
+                  className="flex items-center gap-3 py-1"
+                  role="separator"
+                  aria-label={dateLabel}
+                >
+                  <div className="h-px flex-1 bg-zinc-800" />
+                  <span className="text-xs text-zinc-500">{dateLabel}</span>
+                  <div className="h-px flex-1 bg-zinc-800" />
+                </div>
+              )}
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
-                  message.role === "user"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-zinc-800 text-zinc-100"
+                className={`flex ${
+                  message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
-                {message.content}
-                {message.role === "assistant" && message.remembered && (
-                  <p className="mt-2 text-xs text-emerald-400">✔︎記憶した</p>
-                )}
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+                    message.role === "user"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-zinc-800 text-zinc-100"
+                  }`}
+                >
+                  {message.content}
+                  {message.role === "assistant" && message.remembered && (
+                    <p className="mt-2 text-xs text-emerald-400">✔︎記憶した</p>
+                  )}
+                  <time
+                    dateTime={message.createdAt}
+                    className={`mt-1 block text-right text-[10px] leading-none ${
+                      message.role === "user"
+                        ? "text-emerald-100/70"
+                        : "text-zinc-500"
+                    }`}
+                  >
+                    {clockTime}
+                  </time>
+                </div>
               </div>
-            </div>
+            </Fragment>
           ))}
 
           {isTyping && (
