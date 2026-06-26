@@ -5,9 +5,8 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import {
+  maxTokensForIntent,
   resolveConversationStance,
-  COMFORT_REQUEST_MAX_TOKENS,
-  SHARED_MOMENT_MAX_TOKENS,
 } from "@/lib/din/conversation-stance";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
@@ -123,6 +122,8 @@ export async function POST(request: Request) {
             content: message.content,
           }));
 
+    const shortReplyMaxTokens = maxTokensForIntent(conversationStance.intent);
+
     const completion = await openai.chat.completions.create({
       model,
       messages: [
@@ -140,20 +141,22 @@ export async function POST(request: Request) {
         ? 0.75
         : conversationStance.intent === "comfort_request"
           ? 0.62
-          : conversationStance.intent === "shared_moment"
-            ? 0.55
-            : modelMode === "research"
+          : conversationStance.intent === "pushback"
+            ? 0.58
+            : conversationStance.intent === "profile_share"
               ? 0.52
-              : conversationStance.register === "easygoing"
-                ? 0.72
-                : conversationStance.register === "quiet"
-                  ? 0.55
-                  : 0.6,
-      ...(conversationStance.intent === "shared_moment"
-        ? { max_tokens: SHARED_MOMENT_MAX_TOKENS }
-        : conversationStance.intent === "comfort_request"
-          ? { max_tokens: COMFORT_REQUEST_MAX_TOKENS }
-          : {}),
+              : conversationStance.intent === "shared_moment"
+                ? 0.55
+                : modelMode === "research"
+                  ? 0.52
+                  : conversationStance.register === "easygoing"
+                    ? 0.72
+                    : conversationStance.register === "quiet"
+                      ? 0.55
+                      : 0.6,
+      ...(shortReplyMaxTokens !== undefined
+        ? { max_tokens: shortReplyMaxTokens }
+        : {}),
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();

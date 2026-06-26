@@ -9,8 +9,13 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 短い守りの依頼 / 通常 */
-  intent: "default" | "shared_moment" | "comfort_request";
+  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 通常 */
+  intent:
+    | "default"
+    | "shared_moment"
+    | "comfort_request"
+    | "profile_share"
+    | "pushback";
 };
 
 const CASUAL_USER_PATTERN =
@@ -24,10 +29,10 @@ const TASK_OR_FACT_PATTERN =
 
 /** 助言を求めず、出来事や気持ちを置いている */
 const SHARED_MOMENT_PATTERN =
-  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい/i;
+  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい|鬱|うつ|休職|心配|誰がいつ|わからないね/i;
 
 const SHARED_MOMENT_CONTINUATION_PATTERN =
-  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで/i;
+  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで|休職|鬱|うつ|友達|心配/i;
 
 const ADVICE_SEEKING_PATTERN =
   /どうすれば|どうしたら|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
@@ -40,7 +45,15 @@ const COMFORT_REQUEST_CONTINUATION_PATTERN =
   /安心|大丈夫|慰め|必要な時|言って|言え/i;
 
 const EMOTIONAL_VENT_PATTERN =
-  /怖|不安|つら|しんど|疲れ|悲し|寂し|落ち込|イライラ|もうダメ|きつい|最悪/i;
+  /怖|不安|つら|しんど|疲れ|悲し|寂し|落ち込|イライラ|もうダメ|きつい|最悪|鬱|うつ|心配/i;
+
+/** 職業・趣味・好みなどプロフィールの自己開示 */
+const PROFILE_SHARE_PATTERN =
+  /(?:私|わたし|僕)(?:は|の).{0,50}(?:記者|エンジニア|デザイナ|開発|プログラマ|会社|フリーランス|勤め|働).{0,24}(?:なんだ|なんです|だよ|です|している|してる|だった)|趣味(?:は|が).{1,40}|好きな(?:もの|食べ物|フード)(?:は|が)/i;
+
+/** 直前の Din 返答への困惑・ツッコミ */
+const PUSHBACK_PATTERN =
+  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？/i;
 
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
@@ -55,6 +68,20 @@ export function isComfortRequest(input: string): boolean {
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   return COMFORT_REQUEST_PATTERN.test(normalized);
+}
+
+export function isProfileShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isComfortRequest(normalized)) return false;
+  return PROFILE_SHARE_PATTERN.test(normalized);
+}
+
+export function isPushback(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  return PUSHBACK_PATTERN.test(normalized);
 }
 
 function isComfortRequestContinuation(
@@ -95,6 +122,40 @@ export const SHARED_MOMENT_MAX_TOKENS = 48;
 export const SHARED_MOMENT_MAX_CHARS = 36;
 export const COMFORT_REQUEST_MAX_TOKENS = 40;
 export const COMFORT_REQUEST_MAX_CHARS = 24;
+export const PROFILE_SHARE_MAX_TOKENS = 56;
+export const PROFILE_SHARE_MAX_CHARS = 16;
+export const PUSHBACK_MAX_TOKENS = 40;
+export const PUSHBACK_MAX_CHARS = 24;
+
+const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
+  "shared_moment",
+  "comfort_request",
+  "profile_share",
+  "pushback",
+]);
+
+export function isFixedShortReplyIntent(
+  intent: ConversationStance["intent"],
+): boolean {
+  return FIXED_SHORT_REPLY_INTENTS.has(intent);
+}
+
+export function maxTokensForIntent(
+  intent: ConversationStance["intent"],
+): number | undefined {
+  switch (intent) {
+    case "shared_moment":
+      return SHARED_MOMENT_MAX_TOKENS;
+    case "comfort_request":
+      return COMFORT_REQUEST_MAX_TOKENS;
+    case "profile_share":
+      return PROFILE_SHARE_MAX_TOKENS;
+    case "pushback":
+      return PUSHBACK_MAX_TOKENS;
+    default:
+      return undefined;
+  }
+}
 
 let randomFn = Math.random;
 
@@ -125,7 +186,12 @@ function resolveRegister(
   context?: DinSessionContext,
   intent: ConversationStance["intent"] = "default",
 ): DinConversationRegister {
-  if (intent === "shared_moment" || intent === "comfort_request") {
+  if (
+    intent === "shared_moment" ||
+    intent === "comfort_request" ||
+    intent === "profile_share" ||
+    intent === "pushback"
+  ) {
     return "quiet";
   }
 
@@ -200,10 +266,12 @@ function resolveIntent(
   userInput: string,
   recentUserInputs: readonly string[],
 ): ConversationStance["intent"] {
+  if (isPushback(userInput)) return "pushback";
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
   }
+  if (isProfileShare(userInput)) return "profile_share";
   if (
     isSharedMoment(userInput) ||
     isSharedMomentContinuation(userInput, recentUserInputs)
@@ -223,9 +291,11 @@ export function resolveConversationStance(
   const posture =
     intent === "comfort_request"
       ? "agree"
-      : intent === "shared_moment"
-        ? "neutral"
-        : resolveResponsePosture(register);
+      : intent === "pushback"
+        ? "drift"
+        : intent === "shared_moment" || intent === "profile_share"
+          ? "neutral"
+          : resolveResponsePosture(register);
 
   return { register, posture, intent };
 }
@@ -274,13 +344,25 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
 const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
   "ユーザー「地震が続くと怖いね・・・不安になる」→「……そうか。」",
-  "ユーザー「スマホ2台で音も2倍。びっくりした」→「……2台か。」",
+  "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。」",
 ];
 
 const COMFORT_REQUEST_EXAMPLES = [
   "ユーザー「大丈夫だ、とか言って慰めるのよ、こういう時はね」→「……大丈夫だ。」",
   "ユーザー「安心できる言葉が必要な時だ」→「……大丈夫だ。」",
   "ユーザー「怖いから励まして」→「……俺がいる。」",
+];
+
+const PROFILE_SHARE_EXAMPLES = [
+  "ユーザー「わたしは日経バイオテクの記者なんだよ」→「分かった。」",
+  "ユーザー「趣味は写真だよ」→「知った。」",
+  "ユーザー「好きな食べ物は寿司だね」→「寿司か。」",
+];
+
+const PUSHBACK_EXAMPLES = [
+  "ユーザー「どういうこと〜？！」→「……言いすぎた。」",
+  "ユーザー「意味わからない」→「……失礼した。」",
+  "ユーザー「は？変じゃない？」→「……言い過ぎた。記者か。」",
 ];
 
 function describeSharedMomentIntent(): string {
@@ -315,6 +397,46 @@ function describeComfortRequestIntent(): string {
   ].join("\n");
 }
 
+function describeProfileShareIntent(): string {
+  return [
+    "### 今回は「プロフィールの共有」（最優先）",
+    "ユーザーが職業・趣味・好きなものなど、記憶帳に残す事実を伝えている。",
+    "受け止めて記録する。評価・称賛・説明はしない。",
+    "- 「貴重だ」「素晴らしい」「価値がある」などの評価を足さない",
+    "- 職業の意味・成長・活かし方などの正論を足さない",
+    "- 2文目以降を付けない（分かった。のあとに別の文を続けない）",
+    "- 新しい事実なら最終行に記憶マーカーを付けてよい。本文に「覚えた」とは書かない",
+    "",
+    `制約: 本文1文のみ。${PROFILE_SHARE_MAX_CHARS}字以内。句点（。）は最大1つ。`,
+    "型の例:",
+    ...PROFILE_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describePushbackIntent(): string {
+  return [
+    "### 今回は「返答へのツッコミ」（最優先）",
+    "ユーザーは直前の Din の言い方に困惑・違和感を示している。",
+    "説明・正当化・講義で返すな。短く引くか、言い過ぎを認める。",
+    "- ユーザーの質問に対して長い説明をしない",
+    "- 「つまり〜ということ」「価値がある」などの言い換えをしない",
+    "- 必要なら事実だけ短く言い直す（例: 記者か。）",
+    "",
+    `制約: 1文のみ。${PUSHBACK_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    "型の例:",
+    ...PUSHBACK_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeDefaultAntiAssistantRules(): string {
+  return [
+    "### 通常応答でも避ける型",
+    "- 「それは〜だ」「素晴らしい」「貴重だ」「心配なことだ」で始める評価型",
+    "- ユーザーの能力・仕事・感情の言い換え＋助言・成長論",
+    "- 聞かれていない説明・称賛・まとめ",
+  ].join("\n");
+}
+
 function describeIntentSpecificRules(stance: ConversationStance): string[] {
   if (stance.intent === "shared_moment") {
     return [
@@ -332,15 +454,30 @@ function describeIntentSpecificRules(stance: ConversationStance): string[] {
     ];
   }
 
-  return [];
+  if (stance.intent === "profile_share") {
+    return [
+      describeProfileShareIntent(),
+      "今回のノリ: ちょっと静かな Din（プロフィール共有時は quiet 固定）",
+      "- プロフィール共有時は上記「本文1文のみ」を最優先。easygoing の2文許容より優先する",
+    ];
+  }
+
+  if (stance.intent === "pushback") {
+    return [
+      describePushbackIntent(),
+      "今回のノリ: ちょっと静かな Din（ツッコミ時は quiet 固定）",
+      "- ツッコミ時は説明より短い引きを優先する",
+    ];
+  }
+
+  return [describeDefaultAntiAssistantRules()];
 }
 
 export function describeConversationStance(stance: ConversationStance): string {
   const shape = REGISTER_SHAPE[stance.register];
   const example = REGISTER_EXAMPLES[stance.register];
   const intentSpecific = describeIntentSpecificRules(stance);
-  const usesFixedIntent =
-    stance.intent === "shared_moment" || stance.intent === "comfort_request";
+  const usesFixedIntent = isFixedShortReplyIntent(stance.intent);
 
   return [
     "## 今回の会話スタンス（最優先で守る）",
@@ -352,7 +489,11 @@ export function describeConversationStance(stance: ConversationStance): string {
     "",
     stance.intent === "comfort_request"
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
-      : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
+      : stance.intent === "pushback"
+        ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
+        : stance.intent === "profile_share"
+          ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
+          : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
     "",
     "### 今回の返答で守ること",
     "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
