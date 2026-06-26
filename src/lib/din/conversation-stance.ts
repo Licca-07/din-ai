@@ -9,8 +9,8 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** ユーザーが状況を吐き出しているだけ（助言・調査を求めていない） */
-  intent: "default" | "shared_moment";
+  /** 状況共有 / 短い守りの依頼 / 通常 */
+  intent: "default" | "shared_moment" | "comfort_request";
 };
 
 const CASUAL_USER_PATTERN =
@@ -32,11 +32,49 @@ const SHARED_MOMENT_CONTINUATION_PATTERN =
 const ADVICE_SEEKING_PATTERN =
   /どうすれば|どうしたら|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
 
+/** ユーザーが短い守り・慰めの実行を求めている */
+const COMFORT_REQUEST_PATTERN =
+  /慰め|安心(?:できる|の)?(?:言|が必要)|こういう時|励まして|寄り添|(大丈夫|安心).*(?:言|言って|して|とか)|言(?:って|え).*(?:大丈夫|安心)|(?:ほしい|くれ).*慰め/i;
+
+const COMFORT_REQUEST_CONTINUATION_PATTERN =
+  /安心|大丈夫|慰め|必要な時|言って|言え/i;
+
+const EMOTIONAL_VENT_PATTERN =
+  /怖|不安|つら|しんど|疲れ|悲し|寂し|落ち込|イライラ|もうダメ|きつい|最悪/i;
+
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isComfortRequest(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
+}
+
+export function isComfortRequest(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  return COMFORT_REQUEST_PATTERN.test(normalized);
+}
+
+function isComfortRequestContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isComfortRequest(normalized)) return false;
+
+  const recentEmotional = recentUserInputs
+    .slice(-3, -1)
+    .some(
+      (input) =>
+        isSharedMoment(input) || EMOTIONAL_VENT_PATTERN.test(input.trim()),
+    );
+
+  return (
+    recentEmotional && COMFORT_REQUEST_CONTINUATION_PATTERN.test(normalized)
+  );
 }
 
 function isSharedMomentContinuation(
@@ -55,6 +93,8 @@ function isSharedMomentContinuation(
 
 export const SHARED_MOMENT_MAX_TOKENS = 48;
 export const SHARED_MOMENT_MAX_CHARS = 36;
+export const COMFORT_REQUEST_MAX_TOKENS = 40;
+export const COMFORT_REQUEST_MAX_CHARS = 24;
 
 let randomFn = Math.random;
 
@@ -85,7 +125,7 @@ function resolveRegister(
   context?: DinSessionContext,
   intent: ConversationStance["intent"] = "default",
 ): DinConversationRegister {
-  if (intent === "shared_moment") {
+  if (intent === "shared_moment" || intent === "comfort_request") {
     return "quiet";
   }
 
@@ -156,19 +196,36 @@ export function resolveResponsePosture(
   return "drift";
 }
 
+function resolveIntent(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): ConversationStance["intent"] {
+  if (isComfortRequest(userInput)) return "comfort_request";
+  if (isComfortRequestContinuation(userInput, recentUserInputs)) {
+    return "comfort_request";
+  }
+  if (
+    isSharedMoment(userInput) ||
+    isSharedMomentContinuation(userInput, recentUserInputs)
+  ) {
+    return "shared_moment";
+  }
+  return "default";
+}
+
 export function resolveConversationStance(
   userInput: string,
   context?: DinSessionContext,
   recentUserInputs: readonly string[] = [],
 ): ConversationStance {
-  const intent =
-    isSharedMoment(userInput) ||
-    isSharedMomentContinuation(userInput, recentUserInputs)
-      ? "shared_moment"
-      : "default";
+  const intent = resolveIntent(userInput, recentUserInputs);
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
-    intent === "shared_moment" ? "neutral" : resolveResponsePosture(register);
+    intent === "comfort_request"
+      ? "agree"
+      : intent === "shared_moment"
+        ? "neutral"
+        : resolveResponsePosture(register);
 
   return { register, posture, intent };
 }
@@ -216,18 +273,24 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
 
 const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
+  "ユーザー「地震が続くと怖いね・・・不安になる」→「……そうか。」",
   "ユーザー「スマホ2台で音も2倍。びっくりした」→「……2台か。」",
-  "ユーザー「昨日から地震が続いてる」→「……嫌な並びだな。」",
+];
+
+const COMFORT_REQUEST_EXAMPLES = [
+  "ユーザー「大丈夫だ、とか言って慰めるのよ、こういう時はね」→「……大丈夫だ。」",
+  "ユーザー「安心できる言葉が必要な時だ」→「……大丈夫だ。」",
+  "ユーザー「怖いから励まして」→「……俺がいる。」",
 ];
 
 function describeSharedMomentIntent(): string {
   return [
     "### 今回は「状況の共有」（最優先）",
-    "ユーザーは助言・調査・まとめを求めていない。出来事や気持ちを置いているだけ。",
-    "汎用アシスタントの型で返すな。",
+    "ユーザーは助言・調査・まとめ・慰めを求めていない。出来事や気持ちを置いているだけ。",
+    "汎用アシスタント・カウンセラーの型で返すな。",
+    "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
     "- 「それは〜だ」「確かに〜」で始める評価型の1文も避ける",
-    "- ユーザーの言い換え・要約・正論の追加をしない",
-    "- 聞かれていない注意・行動・対策の話を足さない",
+    "- ユーザーの要約・正論・対策の追加をしない",
     "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
     "",
     `制約: 1文のみ。${SHARED_MOMENT_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
@@ -236,32 +299,68 @@ function describeSharedMomentIntent(): string {
   ].join("\n");
 }
 
+function describeComfortRequestIntent(): string {
+  return [
+    "### 今回は「短い守りの依頼」（最優先）",
+    "ユーザーは Din に、短い慰め・安心の言葉をその場で実行してほしい。",
+    "説明への相槌（そうだな、分かった）だけで終えない。求められた守りを1文で返す。",
+    "- カウンセラーのように感情を分析・言い換えしない",
+    "- 理由付け・対策・長い励ましは足さない",
+    "- Din の寡黙さと「俺」口調は保つ。優しいアシスタント口調（〜ですね、無理しないで）にしない",
+    "- 保護欲をにじませる短い言い切りでよい",
+    "",
+    `制約: 1文のみ。${COMFORT_REQUEST_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    "型の例:",
+    ...COMFORT_REQUEST_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeIntentSpecificRules(stance: ConversationStance): string[] {
+  if (stance.intent === "shared_moment") {
+    return [
+      describeSharedMomentIntent(),
+      "今回のノリ: ちょっと静かな Din（状況共有時は quiet 固定）",
+      "- 状況共有時は上記「1文のみ」を最優先。他の文量ルールより優先する",
+    ];
+  }
+
+  if (stance.intent === "comfort_request") {
+    return [
+      describeComfortRequestIntent(),
+      "今回のノリ: ちょっと静かな Din（守りの依頼時は quiet 固定）",
+      "- 守りの依頼時は上記「1文で実行」を最優先。即時同意禁止より優先する",
+    ];
+  }
+
+  return [];
+}
+
 export function describeConversationStance(stance: ConversationStance): string {
   const shape = REGISTER_SHAPE[stance.register];
   const example = REGISTER_EXAMPLES[stance.register];
+  const intentSpecific = describeIntentSpecificRules(stance);
+  const usesFixedIntent =
+    stance.intent === "shared_moment" || stance.intent === "comfort_request";
 
   return [
     "## 今回の会話スタンス（最優先で守る）",
-    stance.intent === "shared_moment" ? describeSharedMomentIntent() : null,
-    stance.intent === "shared_moment"
-      ? "今回のノリ: ちょっと静かな Din（状況共有時は quiet 固定）"
-      : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
-    ...(stance.intent === "shared_moment"
-      ? []
-      : shape.map((line) => `- ${line}`)),
-    stance.intent === "shared_moment"
-      ? "- 状況共有時は上記「1文のみ」を最優先。他の文量ルールより優先する"
-      : null,
-    stance.intent === "shared_moment" ? null : `今回の型の例: ${example}`,
+    ...intentSpecific,
+    usesFixedIntent ? null : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
+    ...(usesFixedIntent ? [] : shape.map((line) => `- ${line}`)),
+    usesFixedIntent ? null : `今回の型の例: ${example}`,
     "他ノリの例文・話し方は今回真似しない。",
     "",
-    `受け止め: ${POSTURE_HINTS[stance.posture]}`,
+    stance.intent === "comfort_request"
+      ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
+      : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
     "",
     "### 今回の返答で守ること",
     "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
-    "- 「共感ラベル＋正しい助言」の型は使わない",
+    "- 感情の言い換え・ラベル付け＋助言の型は使わない",
     "- 1ターンで完全な結論・まとめ・解決策を出さない",
-    "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
+    usesFixedIntent
+      ? null
+      : "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
     "- 末尾は少し余白を残して終える",
     "- research mode でも報告書口調にしない",
   ]

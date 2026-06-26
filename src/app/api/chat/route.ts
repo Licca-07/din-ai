@@ -4,7 +4,11 @@ import {
   buildMemoryBookContext,
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
-import { resolveConversationStance, SHARED_MOMENT_MAX_TOKENS } from "@/lib/din/conversation-stance";
+import {
+  resolveConversationStance,
+  COMFORT_REQUEST_MAX_TOKENS,
+  SHARED_MOMENT_MAX_TOKENS,
+} from "@/lib/din/conversation-stance";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
@@ -134,18 +138,22 @@ export async function POST(request: Request) {
       ],
       temperature: proactiveOpener
         ? 0.75
-        : conversationStance.intent === "shared_moment"
-          ? 0.55
-          : modelMode === "research"
-            ? 0.52
-            : conversationStance.register === "easygoing"
-              ? 0.72
-              : conversationStance.register === "quiet"
-                ? 0.55
-                : 0.6,
+        : conversationStance.intent === "comfort_request"
+          ? 0.62
+          : conversationStance.intent === "shared_moment"
+            ? 0.55
+            : modelMode === "research"
+              ? 0.52
+              : conversationStance.register === "easygoing"
+                ? 0.72
+                : conversationStance.register === "quiet"
+                  ? 0.55
+                  : 0.6,
       ...(conversationStance.intent === "shared_moment"
         ? { max_tokens: SHARED_MOMENT_MAX_TOKENS }
-        : {}),
+        : conversationStance.intent === "comfort_request"
+          ? { max_tokens: COMFORT_REQUEST_MAX_TOKENS }
+          : {}),
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();
