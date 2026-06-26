@@ -24,7 +24,10 @@ const TASK_OR_FACT_PATTERN =
 
 /** 助言を求めず、出来事や気持ちを置いている */
 const SHARED_MOMENT_PATTERN =
-  /うわ|また|続い|地震|震度|揺れ|揺|怖|最悪|嫌な|ひどい|眠れ|ドキドキ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい/i;
+  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい/i;
+
+const SHARED_MOMENT_CONTINUATION_PATTERN =
+  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで/i;
 
 const ADVICE_SEEKING_PATTERN =
   /どうすれば|どうしたら|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
@@ -32,10 +35,26 @@ const ADVICE_SEEKING_PATTERN =
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
-  if (!SHARED_MOMENT_PATTERN.test(normalized)) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
-  return true;
+  return SHARED_MOMENT_PATTERN.test(normalized);
 }
+
+function isSharedMomentContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+
+  const recentShared = recentUserInputs
+    .slice(-3, -1)
+    .some((input) => isSharedMoment(input));
+
+  return recentShared && SHARED_MOMENT_CONTINUATION_PATTERN.test(normalized);
+}
+
+export const SHARED_MOMENT_MAX_TOKENS = 48;
+export const SHARED_MOMENT_MAX_CHARS = 36;
 
 let randomFn = Math.random;
 
@@ -67,17 +86,7 @@ function resolveRegister(
   intent: ConversationStance["intent"] = "default",
 ): DinConversationRegister {
   if (intent === "shared_moment") {
-    const weights: Record<DinConversationRegister, number> = {
-      easygoing: 1.5,
-      quiet: 3,
-      distant: 0.4,
-    };
-
-    if (/うわ|また|やば|最悪/.test(userInput)) {
-      weights.easygoing += 1;
-    }
-
-    return pickWeightedRegister(weights);
+    return "quiet";
   }
 
   const weights: Record<DinConversationRegister, number> = {
@@ -150,8 +159,13 @@ export function resolveResponsePosture(
 export function resolveConversationStance(
   userInput: string,
   context?: DinSessionContext,
+  recentUserInputs: readonly string[] = [],
 ): ConversationStance {
-  const intent = isSharedMoment(userInput) ? "shared_moment" : "default";
+  const intent =
+    isSharedMoment(userInput) ||
+    isSharedMomentContinuation(userInput, recentUserInputs)
+      ? "shared_moment"
+      : "default";
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
     intent === "shared_moment" ? "neutral" : resolveResponsePosture(register);
@@ -200,42 +214,45 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
   drift: "軽い疑問・保留・わずかな違和感・話題のずれのいずれかを含める。",
 };
 
-const SHARED_MOMENT_EXAMPLES: Record<DinConversationRegister, string> = {
-  easygoing: "ユーザー「うわ、また地震。震度5」→「……またか。無理するな。」",
-  quiet: "ユーザー「うわ、また地震。震度5」→「……またか。」",
-  distant: "ユーザー「うわ、また地震。震度5」→「震度5か。……知った。」",
-};
+const SHARED_MOMENT_EXAMPLES = [
+  "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
+  "ユーザー「スマホ2台で音も2倍。びっくりした」→「……2台か。」",
+  "ユーザー「昨日から地震が続いてる」→「……嫌な並びだな。」",
+];
 
-function describeSharedMomentIntent(register: DinConversationRegister): string {
+function describeSharedMomentIntent(): string {
   return [
-    "### 今回は「状況の共有」",
+    "### 今回は「状況の共有」（最優先）",
     "ユーザーは助言・調査・まとめを求めていない。出来事や気持ちを置いているだけ。",
-    "汎用アシスタントのように「受け止め1文＋助言1文」の2段構成で返すな。",
-    "相棒が同じ部屋にいて、短くその場を受け止める。",
-    "聞かれていない注意・行動・対策の話は足さない。",
-    "1文で返す。2文に膨らませない。",
-    `型の例: ${SHARED_MOMENT_EXAMPLES[register]}`,
+    "汎用アシスタントの型で返すな。",
+    "- 「それは〜だ」「確かに〜」で始める評価型の1文も避ける",
+    "- ユーザーの言い換え・要約・正論の追加をしない",
+    "- 聞かれていない注意・行動・対策の話を足さない",
+    "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
+    "",
+    `制約: 1文のみ。${SHARED_MOMENT_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    "型の例:",
+    ...SHARED_MOMENT_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
 }
 
 export function describeConversationStance(stance: ConversationStance): string {
   const shape = REGISTER_SHAPE[stance.register];
-  const example =
-    stance.intent === "shared_moment"
-      ? SHARED_MOMENT_EXAMPLES[stance.register]
-      : REGISTER_EXAMPLES[stance.register];
+  const example = REGISTER_EXAMPLES[stance.register];
 
   return [
     "## 今回の会話スタンス（最優先で守る）",
+    stance.intent === "shared_moment" ? describeSharedMomentIntent() : null,
     stance.intent === "shared_moment"
-      ? describeSharedMomentIntent(stance.register)
-      : null,
-    `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
-    ...shape.map((line) => `- ${line}`),
+      ? "今回のノリ: ちょっと静かな Din（状況共有時は quiet 固定）"
+      : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
+    ...(stance.intent === "shared_moment"
+      ? []
+      : shape.map((line) => `- ${line}`)),
     stance.intent === "shared_moment"
-      ? "- 状況共有時は上の「1文のみ」を最優先。ノリの文量ルールより優先する"
+      ? "- 状況共有時は上記「1文のみ」を最優先。他の文量ルールより優先する"
       : null,
-    `今回の型の例: ${example}`,
+    stance.intent === "shared_moment" ? null : `今回の型の例: ${example}`,
     "他ノリの例文・話し方は今回真似しない。",
     "",
     `受け止め: ${POSTURE_HINTS[stance.posture]}`,

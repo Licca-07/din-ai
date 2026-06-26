@@ -4,7 +4,7 @@ import {
   buildMemoryBookContext,
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
-import { resolveConversationStance } from "@/lib/din/conversation-stance";
+import { resolveConversationStance, SHARED_MOMENT_MAX_TOKENS } from "@/lib/din/conversation-stance";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
@@ -92,9 +92,14 @@ export async function POST(request: Request) {
       ? buildMemoryPrompt(memoryBookContext)
       : undefined;
 
+    const recentUserInputs = body.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content);
+
     const conversationStance = resolveConversationStance(
       latestUserInput,
       sessionContext,
+      recentUserInputs,
     );
 
     const completionMessages =
@@ -130,7 +135,7 @@ export async function POST(request: Request) {
       temperature: proactiveOpener
         ? 0.75
         : conversationStance.intent === "shared_moment"
-          ? 0.58
+          ? 0.55
           : modelMode === "research"
             ? 0.52
             : conversationStance.register === "easygoing"
@@ -138,6 +143,9 @@ export async function POST(request: Request) {
               : conversationStance.register === "quiet"
                 ? 0.55
                 : 0.6,
+      ...(conversationStance.intent === "shared_moment"
+        ? { max_tokens: SHARED_MOMENT_MAX_TOKENS }
+        : {}),
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();
