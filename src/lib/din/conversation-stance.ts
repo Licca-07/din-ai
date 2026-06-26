@@ -9,14 +9,15 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 相棒提案 / 通常 */
+  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 相棒提案 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
     | "comfort_request"
     | "profile_share"
     | "pushback"
-    | "companion_suggest";
+    | "companion_suggest"
+    | "casual_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -30,10 +31,10 @@ const TASK_OR_FACT_PATTERN =
 
 /** 助言を求めず、出来事や気持ちを置いている */
 const SHARED_MOMENT_PATTERN =
-  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|眠く|眠い|ふわ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい|鬱|うつ|休職|心配|誰がいつ|わからないね/i;
+  /うわ|また|続い|地震|震度|揺れ|揺|速報|びっくり|驚|ドキ|怖|最悪|嫌な|ひどい|眠れ|眠く|眠い|寝てしま|寝たい|ふわ|不安|疲れ|しんど|つら|聞いて|大変|やば|きつい|鬱|うつ|休職|心配|誰がいつ|わからないね/i;
 
 const SHARED_MOMENT_CONTINUATION_PATTERN =
-  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで|休職|鬱|うつ|友達|心配|会見|記者|詰め|仕事|土曜|遅く|3日/i;
+  /びっくり|驚|音|2台|二台|倍|なんだよね|だった|で、|それで|休職|鬱|うつ|友達|心配|会見|記者|詰め|仕事|土曜|遅く|3日|風呂|お風呂|眠|寝/i;
 
 const ADVICE_SEEKING_PATTERN =
   /どう(?:すれば|したら|.*?(?:いい|思う|休め|対処))|(?:何|なに)(?:を|が)(?:すれば|したら|いい)|教えて|アドバイス|対策|備え|注意すべき|すべき|方がいい|大丈夫\?|大丈夫？/i;
@@ -42,9 +43,16 @@ const ADVICE_SEEKING_PATTERN =
 const ADVICE_REQUEST_PATTERN =
   /どう(?:すれば|したら|.*?(?:いい|思う|休め|対処))|(?:何|なに)(?:を|が)(?:すれば|したら|いい)|(?:教えて|アドバイス)(?:くれ|ほしい)?|どう思う|どう思い/i;
 
-/** ユーザーが自分のアイデアを試しに出している */
+/** ユーザーが自分のアイデアを Din に問いかけている（？必須） */
 const IDEA_BOUNCE_PATTERN =
-  /(?:たり|てみ|試し|にする|はどう|どう(?:かな|思う)?|いいかな)[？?]?$/i;
+  /(?:たり|てみ|試し|にする|はどう|どう(?:かな|思う)?|いいかな)[？?]$/i;
+
+/** 好み・感覚・予定をぽろぽろ話している（助言を求めていない） */
+const CASUAL_SHARE_PATTERN =
+  /好き(?:だ|な)|いいよね|いいな|心地よ|パチパチ|燃える|キャンドル|風呂|お風呂|入ろう|洗っ|お皿|アロマ|その音/i;
+
+const CASUAL_SHARE_CONTINUATION_PATTERN =
+  /風呂|お風呂|キャンドル|洗|皿|眠|寝|入ろ|アロマ|パチパチ|音|焚/i;
 
 /** ユーザーが短い守り・慰めの実行を求めている */
 const COMFORT_REQUEST_PATTERN =
@@ -62,7 +70,7 @@ const PROFILE_SHARE_PATTERN =
 
 /** 直前の Din 返答への困惑・ツッコミ */
 const PUSHBACK_PATTERN =
-  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？/i;
+  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？|わかって(?:る|た)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答/i;
 
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
@@ -111,6 +119,37 @@ export function isCompanionSuggest(input: string): boolean {
   return isAdviceRequest(input) || isIdeaBounce(input);
 }
 
+export function isCasualShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isProfileShare(normalized)
+  ) {
+    return false;
+  }
+  return CASUAL_SHARE_PATTERN.test(normalized);
+}
+
+function isCasualShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isCompanionSuggest(normalized)) return false;
+  if (SHARED_MOMENT_PATTERN.test(normalized)) return false;
+
+  const recentCasual = recentUserInputs
+    .slice(-3, -1)
+    .some((input) => isCasualShare(input) || CASUAL_SHARE_PATTERN.test(input.trim()));
+
+  return recentCasual && CASUAL_SHARE_CONTINUATION_PATTERN.test(normalized);
+}
+
 function isComfortRequestContinuation(
   userInput: string,
   recentUserInputs: readonly string[],
@@ -155,12 +194,15 @@ export const PUSHBACK_MAX_TOKENS = 40;
 export const PUSHBACK_MAX_CHARS = 24;
 export const COMPANION_SUGGEST_MAX_TOKENS = 72;
 export const COMPANION_SUGGEST_MAX_CHARS = 60;
+export const CASUAL_SHARE_MAX_TOKENS = 48;
+export const CASUAL_SHARE_MAX_CHARS = 28;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
   "comfort_request",
   "profile_share",
   "pushback",
+  "casual_share",
 ]);
 
 export function isFixedShortReplyIntent(
@@ -183,6 +225,8 @@ export function maxTokensForIntent(
       return PUSHBACK_MAX_TOKENS;
     case "companion_suggest":
       return COMPANION_SUGGEST_MAX_TOKENS;
+    case "casual_share":
+      return CASUAL_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -221,7 +265,8 @@ function resolveRegister(
     intent === "shared_moment" ||
     intent === "comfort_request" ||
     intent === "profile_share" ||
-    intent === "pushback"
+    intent === "pushback" ||
+    intent === "casual_share"
   ) {
     return "quiet";
   }
@@ -314,6 +359,12 @@ function resolveIntent(
   ) {
     return "shared_moment";
   }
+  if (
+    isCasualShare(userInput) ||
+    isCasualShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "casual_share";
+  }
   return "default";
 }
 
@@ -329,7 +380,7 @@ export function resolveConversationStance(
       ? "agree"
       : intent === "pushback"
         ? "drift"
-        : intent === "shared_moment" || intent === "profile_share"
+        : intent === "shared_moment" || intent === "profile_share" || intent === "casual_share"
           ? "neutral"
           : resolveResponsePosture(register);
 
@@ -381,6 +432,7 @@ const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
   "ユーザー「ふわ、急に眠くなった。画面見て疲れたのかな？」→「……そうか。」",
   "ユーザー「3日連続で記者会見が入って遅くまで詰めていた」→「……詰めたな。」",
+  "ユーザー「このまま寝てしまいたい気持ち…眠い」→「……そうか。」",
   "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。」",
 ];
 
@@ -405,7 +457,13 @@ const PROFILE_SHARE_EXAMPLES = [
 const PUSHBACK_EXAMPLES = [
   "ユーザー「どういうこと〜？！」→「……言いすぎた。」",
   "ユーザー「意味わからない」→「……失礼した。」",
-  "ユーザー「は？変じゃない？」→「……言い過ぎた。記者か。」",
+  "ユーザー「お風呂に入った方がいいのはわかってる」→「……知ってるな。」",
+];
+
+const CASUAL_SHARE_EXAMPLES = [
+  "ユーザー「アロマキャンドル焚きながらお風呂に入るの好きだよ」→「……風呂か。」",
+  "ユーザー「パチパチ燃える音のキャンドルっていいよね」→「……悪くない。」",
+  "ユーザー「お皿洗って、お風呂に入ろうかな」→「……入れ。」",
 ];
 
 function describeSharedMomentIntent(): string {
@@ -416,7 +474,8 @@ function describeSharedMomentIntent(): string {
     "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
     "- 「それは〜だ」「大変だったな」などの評価型も避ける",
     "- ユーザーの言い換え・要約（画面を見続けると疲れる、など）をしない",
-    "- 聞かれていない休憩・対策の提案をしない（休憩を取るといい、など）",
+    "- 聞かれていない休憩・対策の提案をしない（休憩を取るといい、無理せず休む、など）",
+    "- 「リラックス」「良い選択」「心地よい落ち着き」などの wellness 口調も避ける",
     "- ユーザーの要約・正論・対策の追加をしない",
     "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
     "",
@@ -461,15 +520,31 @@ function describeProfileShareIntent(): string {
 function describePushbackIntent(): string {
   return [
     "### 今回は「返答へのツッコミ」（最優先）",
-    "ユーザーは直前の Din の言い方に困惑・違和感を示している。",
-    "説明・正当化・講義で返すな。短く引くか、言い過ぎを認める。",
+    "ユーザーは直前の Din の言い方に困惑・違和感を示している。または「わかってる」と繰り返しの助言を拒んでいる。",
+    "説明・正当化・講義・もう一度の助言で返すな。短く引く。",
     "- ユーザーの質問に対して長い説明をしない",
-    "- 「つまり〜ということ」「価値がある」などの言い換えをしない",
+    "- 「つまり〜」「リラックスのために〜は良い選択」などの言い換え・再助言をしない",
     "- 必要なら事実だけ短く言い直す（例: 記者か。）",
     "",
     `制約: 1文のみ。${PUSHBACK_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
     "型の例:",
     ...PUSHBACK_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeCasualShareIntent(): string {
+  return [
+    "### 今回は「雑談の共有」（最優先）",
+    "ユーザーは好み・感覚・予定をぽろぽろ話している。一問一答の評論・助言を求めていない。",
+    "同じ部屋で軽く会話に乗る。毎回ユーザーの発言を評価・言い換えしない。",
+    "- 「それは〜だ」「良いだろう」「リラックスできそう」などの評価型を避ける",
+    "- ユーザーの描写の言い換え（その音は心地よい、など）をしない",
+    "- 聞かれていない助言・ wellness 正論（無理せず休む、大事だ、など）を足さない",
+    "- 短い返球・相槌・一言だけ。会話の流れを止めない",
+    "",
+    `制約: 1文のみ。${CASUAL_SHARE_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    "型の例:",
+    ...CASUAL_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
 }
 
@@ -496,6 +571,7 @@ function describeDefaultAntiAssistantRules(): string {
     "- 「それは〜だ」「素晴らしい」「貴重だ」「心配なことだ」で始める評価型",
     "- ユーザーの能力・仕事・感情の言い換え＋助言・成長論",
     "- 聞かれていない説明・称賛・まとめ",
+    "- ユーザーがぽろぽろ話しているとき、毎ターン評価や言い換えで一問一答にしない",
   ].join("\n");
 }
 
@@ -540,6 +616,14 @@ function describeIntentSpecificRules(stance: ConversationStance): string[] {
     ];
   }
 
+  if (stance.intent === "casual_share") {
+    return [
+      describeCasualShareIntent(),
+      "今回のノリ: ちょっと静かな Din（雑談共有時は quiet 固定）",
+      "- 雑談共有時は上記「1文の返球」を最優先。評価・言い換え・助言より優先する",
+    ];
+  }
+
   return [describeDefaultAntiAssistantRules()];
 }
 
@@ -565,7 +649,9 @@ export function describeConversationStance(stance: ConversationStance): string {
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
-          : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
+          : stance.intent === "casual_share"
+            ? "受け止め: 会話に短く乗る。毎回評価・言い換え・助言で返さない。"
+            : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
     "",
     "### 今回の返答で守ること",
     "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
