@@ -13,7 +13,7 @@ import {
   tryAcquireJournalGenerationLock,
   waitForJournalByDate,
 } from "@/lib/supabase/journal-repository";
-import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
+import { getOpenAIClient, getOpenAIModelMini } from "@/lib/openai";
 import type { JournalGenerateResponse } from "@/types/journal";
 
 async function waitForExistingJournal(journalDate: string) {
@@ -55,7 +55,7 @@ export async function generateDailyJournalIfNeeded(
     }
 
     const openai = getOpenAIClient();
-    const model = getOpenAIModel();
+    const model = getOpenAIModelMini();
 
     const completion = await openai.chat.completions.create({
       model,

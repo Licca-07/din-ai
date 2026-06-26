@@ -5,7 +5,7 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
-import { getOpenAIClient, getOpenAIModel } from "@/lib/openai";
+import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
 import type {
   ChatErrorResponse,
@@ -57,7 +57,12 @@ export async function POST(request: Request) {
     }
 
     const openai = getOpenAIClient();
-    const model = getOpenAIModel();
+    const latestUserInput =
+      body.messages.filter((message) => message.role === "user").at(-1)?.content ??
+      "";
+    const { model, mode: modelMode } = requestGreeting
+      ? { model: getOpenAIModelMini(), mode: "mini" as const }
+      : resolveChatModel(latestUserInput);
     const sessionContext = body.sessionContext
       ? {
           ...body.sessionContext,
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
         },
         ...completionMessages,
       ],
-      temperature: proactiveOpener ? 0.75 : 0.6,
+      temperature: proactiveOpener ? 0.75 : modelMode === "research" ? 0.5 : 0.6,
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();
