@@ -24,6 +24,8 @@ export const DEFAULT_MEMORY: DinMemory = {
   shortTermMemories: [],
   followUpTopics: [],
   lastFollowUpTopicId: null,
+  lastAppOpenedAt: null,
+  lastStartupMessage: null,
 };
 
 function isValidImportance(value: unknown): value is MemoryImportance {
@@ -106,6 +108,8 @@ export function normalizeMemory(value: Partial<DinMemory>): DinMemory {
           .filter((topic): topic is FollowUpTopic => topic !== null)
       : [],
     lastFollowUpTopicId: value.lastFollowUpTopicId ?? null,
+    lastAppOpenedAt: value.lastAppOpenedAt ?? null,
+    lastStartupMessage: value.lastStartupMessage ?? null,
   };
 }
 
@@ -130,7 +134,11 @@ export function isValidMemory(value: unknown): value is DinMemory {
     Array.isArray(memory.followUpTopics) &&
     memory.followUpTopics.every(isValidFollowUpTopic) &&
     (memory.lastFollowUpTopicId === null ||
-      typeof memory.lastFollowUpTopicId === "string")
+      typeof memory.lastFollowUpTopicId === "string") &&
+    (memory.lastAppOpenedAt === null ||
+      typeof memory.lastAppOpenedAt === "string") &&
+    (memory.lastStartupMessage === null ||
+      typeof memory.lastStartupMessage === "string")
   );
 }
 
@@ -170,6 +178,15 @@ export function normalizePartialMemory(value: unknown): DinMemory | null {
       memory.lastFollowUpTopicId === null ||
       typeof memory.lastFollowUpTopicId === "string"
         ? (memory.lastFollowUpTopicId ?? null)
+        : null,
+    lastAppOpenedAt:
+      memory.lastAppOpenedAt === null || typeof memory.lastAppOpenedAt === "string"
+        ? (memory.lastAppOpenedAt ?? null)
+        : null,
+    lastStartupMessage:
+      memory.lastStartupMessage === null ||
+      typeof memory.lastStartupMessage === "string"
+        ? (memory.lastStartupMessage ?? null)
         : null,
   });
 }

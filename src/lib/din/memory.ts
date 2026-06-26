@@ -7,10 +7,12 @@ import {
   markFollowUpAsked,
   resolveFollowUpTopic,
 } from "@/lib/din/follow-up";
+import { recordProactiveSeed } from "@/lib/din/proactive-opener";
 import {
   clampImportance,
   createMemoryItem as createMemoryItemInternal,
 } from "@/lib/din/memory-priority";
+import { recordSessionVisit } from "@/lib/din/session-context";
 import {
   DEFAULT_MEMORY,
   normalizeMemory,
@@ -484,8 +486,28 @@ export function resolveSessionFollowUp() {
 
 export {
   recordProactiveOpenerUsed,
-  resolveStartupProactiveOpener,
 } from "@/lib/din/proactive-opener";
+
+export { resolveStartupGreeting } from "@/lib/din/startup-greeting";
+
+export function recordAppOpened(now = new Date()): void {
+  updateMemory((memory) => ({
+    ...memory,
+    lastAppOpenedAt: now.toISOString(),
+  }));
+  recordSessionVisit(now);
+}
+
+export function recordStartupGreetingShown(content: string): void {
+  const normalized = content.trim().replace(/\s+/g, " ");
+  if (!normalized) return;
+
+  updateMemory((memory) => ({
+    ...memory,
+    lastStartupMessage: normalized,
+  }));
+  recordProactiveSeed(normalized);
+}
 
 export function recordFollowUpTopicAsked(topicId: string): void {
   updateMemory((memory) => ({

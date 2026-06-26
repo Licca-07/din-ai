@@ -21,6 +21,8 @@ export type DinMemory = {
   shortTermMemories: MemoryItem[];
   followUpTopics: FollowUpTopic[];
   lastFollowUpTopicId: string | null;
+  lastAppOpenedAt: string | null;
+  lastStartupMessage: string | null;
 };
 
 export type DinMemoryTab = "chat" | "memory";

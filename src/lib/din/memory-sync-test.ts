@@ -57,6 +57,8 @@ export function createMemorySyncTestPayload(runId: string): DinMemory {
     ],
     followUpTopics: [],
     lastFollowUpTopicId: null,
+    lastAppOpenedAt: null,
+    lastStartupMessage: null,
   };
 }
 

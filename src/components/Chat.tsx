@@ -14,6 +14,10 @@ import {
   recordLastConversation,
   recordTopicMentionsFromMessage,
   recordTopicsFromMemoryItems,
+  recordAppOpened,
+  recordStartupGreetingShown,
+  resolveStartupGreeting,
+  recordProactiveOpenerUsed,
   saveChatHistory,
   saveUserProfile,
 } from "@/lib/din/memory";
@@ -21,24 +25,13 @@ import {
   incrementConversationCount,
   syncConversationCountFromHistory,
 } from "@/lib/din/conversation-count";
-import {
-  buildSessionContext,
-  recordSessionVisit,
-} from "@/lib/din/session-context";
 import { getJournalDateJst } from "@/lib/din/journal-date";
 import {
   ensureDailyJournal,
 } from "@/lib/din/journal-client";
 import { revealAssistantBubbles } from "@/lib/din/chat-bubble-reveal";
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
-import {
-  isAwaitingUserReply,
-  markPendingContinuationShown,
-  pickPendingContinuationMessage,
-  resolveStartupProactiveOpener,
-  recordProactiveOpenerUsed,
-  shouldShowPendingContinuation,
-} from "@/lib/din/proactive-opener";
+import { buildSessionContext } from "@/lib/din/session-context";
 import TodayJournalSheet from "@/components/TodayJournalSheet";
 import type { ChatMessage } from "@/types/chat";
 import type { StoredChatMessage } from "@/types/din-memory";
@@ -227,60 +220,44 @@ export default function Chat({
           (message) => message.role === "user",
         ).length;
         syncConversationCountFromHistory(userMessageCount);
+        setMessages(savedMessages);
 
-        if (isAwaitingUserReply(savedMessages)) {
-          setMessages(savedMessages);
+        const greetingDecision = resolveStartupGreeting(loadMemory());
 
-          const lastAssistantMessage = savedMessages[savedMessages.length - 1];
-          const sessionContext = buildSessionContext();
+        if (greetingDecision?.mode === "fixed") {
+          try {
+            setIsTyping(true);
+            await revealAssistantBubbles(greetingDecision.message, {
+              onTypingChange: setIsTyping,
+              appendMessage: (message) => {
+                if (cancelled) return;
+                setMessages((prev) => [...prev, message]);
+              },
+              shouldCancel: () => cancelled,
+            });
 
-          if (
-            lastAssistantMessage &&
-            sessionContext.absence !== "normal" &&
-            shouldShowPendingContinuation(lastAssistantMessage.id)
-          ) {
-            try {
-              setIsTyping(true);
-              await revealAssistantBubbles(pickPendingContinuationMessage(), {
-                onTypingChange: setIsTyping,
-                appendMessage: (message) => {
-                  if (cancelled) return;
-                  setMessages((prev) => [...prev, message]);
-                },
-                shouldCancel: () => cancelled,
-              });
-
-              if (!cancelled) {
-                markPendingContinuationShown(lastAssistantMessage.id);
-              }
-            } catch {
-              // 継続メッセージはローカル表示のみ。失敗しても履歴はそのまま。
-            } finally {
-              if (!cancelled) {
-                setIsTyping(false);
-              }
+            if (!cancelled) {
+              recordStartupGreetingShown(greetingDecision.message);
+            }
+          } catch {
+            // 固定メッセージ表示のみ。失敗しても履歴はそのまま。
+          } finally {
+            if (!cancelled) {
+              setIsTyping(false);
             }
           }
-
-          recordSessionVisit();
-          setIsBootstrapping(false);
-          return;
-        }
-
-        const proactiveOpener = resolveStartupProactiveOpener(loadMemory());
-
-        if (proactiveOpener) {
+        } else if (greetingDecision?.mode === "llm") {
           try {
             setIsTyping(true);
             const proactiveReply = await requestStartupProactiveMessage(
               profile,
-              proactiveOpener,
+              greetingDecision.opener,
             );
 
             if (cancelled) return;
 
-            recordProactiveOpenerUsed(proactiveOpener);
-            setMessages(savedMessages);
+            recordProactiveOpenerUsed(greetingDecision.opener);
+            recordStartupGreetingShown(proactiveReply.content);
 
             await revealAssistantBubbles(proactiveReply.content, {
               remembered: proactiveReply.remembered,
@@ -292,17 +269,15 @@ export default function Chat({
               shouldCancel: () => cancelled,
             });
           } catch {
-            setMessages(savedMessages);
+            // API 失敗時は履歴のみ表示。
           } finally {
             if (!cancelled) {
               setIsTyping(false);
             }
           }
-        } else {
-          setMessages(savedMessages);
         }
 
-        recordSessionVisit();
+        recordAppOpened();
         setIsBootstrapping(false);
         return;
       }
@@ -322,7 +297,8 @@ export default function Chat({
           },
           shouldCancel: () => cancelled,
         });
-        recordSessionVisit();
+        recordStartupGreetingShown(greeting.content);
+        recordAppOpened();
       } catch (bootstrapError) {
         if (cancelled) return;
 
