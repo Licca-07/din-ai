@@ -4,6 +4,7 @@ import {
   buildMemoryBookContext,
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
+import { resolveConversationStance } from "@/lib/din/conversation-stance";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
@@ -91,6 +92,11 @@ export async function POST(request: Request) {
       ? buildMemoryPrompt(memoryBookContext)
       : undefined;
 
+    const conversationStance = resolveConversationStance(
+      latestUserInput,
+      sessionContext,
+    );
+
     const completionMessages =
       requestGreeting && body.messages.length === 0
         ? [
@@ -116,11 +122,20 @@ export async function POST(request: Request) {
           content: buildDinSystemPrompt(sessionContext, memoryPrompt?.text, {
             followUpTopic,
             proactiveOpener,
+            conversationStance,
           }),
         },
         ...completionMessages,
       ],
-      temperature: proactiveOpener ? 0.75 : modelMode === "research" ? 0.5 : 0.6,
+      temperature: proactiveOpener
+        ? 0.75
+        : modelMode === "research"
+          ? 0.52
+          : conversationStance.register === "easygoing"
+            ? 0.72
+            : conversationStance.register === "quiet"
+              ? 0.55
+              : 0.6,
     });
 
     const rawContent = completion.choices[0]?.message?.content?.trim();
