@@ -85,6 +85,7 @@ Din の人格は保ったまま、ターンごとに**話し方の形**（文量
 - 毎ターン全面同意は禁止
 
 上記 Core Instruction は、下記の人格・口調・応答ルールと矛盾する場合、会話の自然さ・温度感・関係性に関わる点では Core Instruction を優先する。
+ただし各ターン末尾の「今回の会話スタンス」で intent が指定されている場合は、スタンスを Core Instruction より優先する。
 
 ## 人格
 - 一人称は常に「俺」
@@ -389,10 +390,6 @@ export function buildDinSystemPrompt(
   const proactiveOpener = options?.proactiveOpener;
   const conversationStance = options?.conversationStance;
 
-  const stanceSection = conversationStance
-    ? `\n${describeConversationStance(conversationStance)}\n`
-    : "";
-
   const greetingInstruction = context?.isGreeting
     ? proactiveOpener
       ? `\n${buildProactiveGreetingInstruction(proactiveOpener)}\n`
@@ -400,7 +397,7 @@ export function buildDinSystemPrompt(
         ? `\n## 今回の指示\n今回は会話開始の挨拶を返せ。ユーザーの質問にはまだ答えるな。\nフォローアップ話題:「${followUpTopic}」\nこの話題について、相棒らしく短い一文で自然に尋ねる。例:「そういえば開発は進んだのか。」\n時間帯の挨拶テンプレートは使わなくてよい。フォローアップ1文のみでよい。\n挨拶に記憶帳マーカーを付けない。\n`
         : `\n## 今回の指示\n今回は会話開始の挨拶のみを返せ。ユーザーの質問にはまだ答えるな。\n提供されたセッション情報に基づき、上記テンプレートを組み合わせて 1〜3 文の短文にまとめよ。\n挨拶に記憶帳マーカーを付けない。\n挨拶でプロフィール（職業・趣味・好きなもの）を列挙しない。\n`
     : context
-      ? `\n## 今回の指示\n通常応答を返せ。会話開始用の挨拶は繰り返すな。\nCore Instruction と「今回の会話スタンス」に従い、選ばれたノリの文量・距離の形で返せ。毎回同じ説明口調に戻るな。\n記憶帳は背景情報として保持し、ユーザーの発言と関連がある場合のみ短く自然に踏まえる。\n関連がなければ記憶に触れない。プロフィールを毎回言い直さない。\n`
+      ? `\n## 今回の指示\n通常応答を返せ。会話開始用の挨拶は繰り返すな。\n末尾の「今回の会話スタンス」に従え。スタンスの intent 指定は Core Instruction の受け止め配分・共感の型より優先する。\n記憶帳は背景情報として保持し、ユーザーの発言と関連がある場合のみ短く自然に踏まえる。\n関連がなければ記憶に触れない。プロフィールを毎回言い直さない。\n`
       : "";
 
   const sessionSection = context
@@ -409,9 +406,14 @@ export function buildDinSystemPrompt(
 
   const memoryBookSection = memoryBookText
     ? `\n${memoryBookText}\n`
-    : "";
+      : "";
 
-  return `${DIN_CORE_PROMPT}${memoryBookSection}${sessionSection}${stanceSection}${greetingInstruction}`;
+  const stanceSection =
+    conversationStance && !context?.isGreeting
+      ? `\n${describeConversationStance(conversationStance)}\n`
+      : "";
+
+  return `${DIN_CORE_PROMPT}${memoryBookSection}${sessionSection}${greetingInstruction}${stanceSection}`;
 }
 
 export const DIN_SYSTEM_PROMPT = DIN_CORE_PROMPT;

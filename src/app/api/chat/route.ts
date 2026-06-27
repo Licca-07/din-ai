@@ -202,6 +202,7 @@ export async function POST(request: Request) {
         newFollowUpRecalls.length > 0 ? newFollowUpRecalls : undefined,
       referencedMemoryIds: memoryPrompt?.referencedMemoryIds,
       followUpTopicId: body.followUpTopicId,
+      conversationIntent: conversationStance.intent,
     });
   } catch (error) {
     const message =

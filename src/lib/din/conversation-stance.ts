@@ -257,6 +257,19 @@ const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "casual_share",
 ]);
 
+/** intent 専用プロンプトがあり、汎用 register 説明を載せない */
+const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
+  ...FIXED_SHORT_REPLY_INTENTS,
+  "deepen_share",
+  "companion_suggest",
+]);
+
+export function usesIntentShapeOverride(
+  intent: ConversationStance["intent"],
+): boolean {
+  return INTENT_SHAPE_OVERRIDE_INTENTS.has(intent);
+}
+
 export function isFixedShortReplyIntent(
   intent: ConversationStance["intent"],
 ): boolean {
@@ -547,7 +560,7 @@ function describeDeepenShareIntent(): string {
     "- ユーザーが言及した場面・人物・出来事のうち、まだ曖昧な1点だけを短く問う",
     "- 尋問口調・長い質問・複数の質問は禁止",
     "",
-    `制約: 1〜2文。合計${DEEPEN_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。句点（。）は最大2つ。`,
+    `制約: 1〜2文。合計${DEEPEN_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。末尾は疑問形（？または「〜か。」「〜だ。」）で終える。句点（。）は最大2つ。`,
     "型の例:",
     ...DEEPEN_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -726,14 +739,14 @@ export function describeConversationStance(stance: ConversationStance): string {
   const shape = REGISTER_SHAPE[stance.register];
   const example = REGISTER_EXAMPLES[stance.register];
   const intentSpecific = describeIntentSpecificRules(stance);
-  const usesFixedIntent = isFixedShortReplyIntent(stance.intent);
+  const hideRegisterShape = usesIntentShapeOverride(stance.intent);
 
   return [
-    "## 今回の会話スタンス（最優先で守る）",
+    "## 今回の会話スタンス（Core Instruction より優先）",
     ...intentSpecific,
-    usesFixedIntent ? null : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
-    ...(usesFixedIntent ? [] : shape.map((line) => `- ${line}`)),
-    usesFixedIntent ? null : `今回の型の例: ${example}`,
+    hideRegisterShape ? null : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
+    ...(hideRegisterShape ? [] : shape.map((line) => `- ${line}`)),
+    hideRegisterShape ? null : `今回の型の例: ${example}`,
     "他ノリの例文・話し方は今回真似しない。",
     "",
     stance.intent === "comfort_request"
@@ -758,7 +771,10 @@ export function describeConversationStance(stance: ConversationStance): string {
       : stance.intent === "deepen_share"
         ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
         : "- 1ターンで完全な結論・まとめ・解決策を出さない",
-    usesFixedIntent
+    hideRegisterShape
+      ? "- 今回の intent 指定は Core Instruction の受け止め配分・共感例より優先する"
+      : null,
+    hideRegisterShape
       ? null
       : "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
     "- 末尾は少し余白を残して終える",

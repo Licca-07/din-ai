@@ -1,4 +1,5 @@
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
+import type { ConversationStance } from "@/lib/din/conversation-stance";
 import type { DinSessionContext } from "@/lib/din/session-context";
 import type { FollowUpRecallInput } from "@/types/follow-up";
 import type { MemoryItem } from "@/types/memory-item";
@@ -31,6 +32,8 @@ export type ChatResponseBody = {
   newFollowUpRecalls?: FollowUpRecallInput[];
   referencedMemoryIds?: string[];
   followUpTopicId?: string;
+  /** サーバー側 intent 判定（挙動確認用） */
+  conversationIntent?: ConversationStance["intent"];
 };
 
 export type ChatErrorResponse = {
