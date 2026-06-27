@@ -150,7 +150,9 @@ export async function POST(request: Request) {
             ? 0.68
             : conversationStance.intent === "plan_share"
               ? 0.68
-              : conversationStance.intent === "deepen_share"
+              : conversationStance.intent === "bond_share"
+                ? 0.64
+                : conversationStance.intent === "deepen_share"
               ? 0.66
               : conversationStance.intent === "casual_share"
               ? 0.58

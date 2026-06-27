@@ -410,7 +410,7 @@ export function buildDinSystemPrompt(
 
   const stanceSection =
     conversationStance && !context?.isGreeting
-      ? `\n${describeConversationStance(conversationStance)}\n`
+      ? `\n${describeConversationStance(conversationStance, context)}\n`
       : "";
 
   return `${DIN_CORE_PROMPT}${memoryBookSection}${sessionSection}${greetingInstruction}${stanceSection}`;
