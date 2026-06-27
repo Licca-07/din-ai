@@ -9,7 +9,7 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 相棒提案 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
@@ -17,6 +17,7 @@ export type ConversationStance = {
     | "profile_share"
     | "pushback"
     | "companion_suggest"
+    | "plan_share"
     | "casual_share"
     | "deepen_share";
 };
@@ -47,6 +48,13 @@ const ADVICE_REQUEST_PATTERN =
 /** ユーザーが自分のアイデアを Din に問いかけている（？必須） */
 const IDEA_BOUNCE_PATTERN =
   /(?:たり|てみ|試し|にする|はどう|どう(?:かな|思う)?|いいかな)[？?]$/i;
+
+/** ユーザーがこれから作る・試す・組み合わせるプランを宣言している */
+const PLAN_SHARE_PATTERN =
+  /(?:作(?:ろう|る|って|り)|組み合わせ(?:て|る)|混ぜ(?:て|る)|試(?:し(?:てみ|に)|す)|実装|構築|開発|デプロイ|用意(?:し|する)|考え(?:て(?:る|い)|中))/i;
+
+const PLAN_SHARE_CONTINUATION_PATTERN =
+  /入れ|足し|替|代わり|ソース|ドレッシング|ハチミツ|ナッツ|ルッコラ|バジル|塩|胡椒|量|先に|後で|トッピング/i;
 
 /** 好み・感覚・予定をぽろぽろ話している（助言を求めていない） */
 const CASUAL_SHARE_PATTERN =
@@ -96,6 +104,7 @@ export function isSharedMoment(input: string): boolean {
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isComfortRequest(normalized)) return false;
   if (isCompanionSuggest(normalized)) return false;
+  if (isPlanShare(normalized)) return false;
   if (isDeepenShare(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
@@ -136,6 +145,42 @@ export function isIdeaBounce(input: string): boolean {
 
 export function isCompanionSuggest(input: string): boolean {
   return isAdviceRequest(input) || isIdeaBounce(input);
+}
+
+export function isPlanShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isAdviceRequest(normalized) || isIdeaBounce(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isProfileShare(normalized)
+  ) {
+    return false;
+  }
+  return PLAN_SHARE_PATTERN.test(normalized);
+}
+
+function isPlanShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isComfortRequest(normalized)
+  ) {
+    return false;
+  }
+
+  const recentPlan = recentUserInputs
+    .slice(-4, -1)
+    .some((input) => isPlanShare(input) || PLAN_SHARE_PATTERN.test(input.trim()));
+
+  return recentPlan && PLAN_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isDeepenShare(input: string): boolean {
@@ -206,6 +251,7 @@ export function isCasualShare(input: string): boolean {
     isPushback(normalized) ||
     isComfortRequest(normalized) ||
     isCompanionSuggest(normalized) ||
+    isPlanShare(normalized) ||
     isProfileShare(normalized)
   ) {
     return false;
@@ -277,6 +323,8 @@ export const CASUAL_SHARE_MAX_TOKENS = 48;
 export const CASUAL_SHARE_MAX_CHARS = 28;
 export const DEEPEN_SHARE_MAX_TOKENS = 72;
 export const DEEPEN_SHARE_MAX_CHARS = 52;
+export const PLAN_SHARE_MAX_TOKENS = 80;
+export const PLAN_SHARE_MAX_CHARS = 64;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -291,6 +339,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   ...FIXED_SHORT_REPLY_INTENTS,
   "deepen_share",
   "companion_suggest",
+  "plan_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -323,6 +372,8 @@ export function maxTokensForIntent(
       return CASUAL_SHARE_MAX_TOKENS;
     case "deepen_share":
       return DEEPEN_SHARE_MAX_TOKENS;
+    case "plan_share":
+      return PLAN_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -367,7 +418,11 @@ function resolveRegister(
     return "quiet";
   }
 
-  if (intent === "companion_suggest" || intent === "deepen_share") {
+  if (
+    intent === "companion_suggest" ||
+    intent === "plan_share" ||
+    intent === "deepen_share"
+  ) {
     return "easygoing";
   }
 
@@ -451,6 +506,12 @@ function resolveIntent(
   if (isProfileShare(userInput)) return "profile_share";
   if (isCompanionSuggest(userInput)) return "companion_suggest";
   if (
+    isPlanShare(userInput) ||
+    isPlanShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "plan_share";
+  }
+  if (
     isDeepenShare(userInput) ||
     isDeepenShareContinuation(userInput, recentUserInputs) ||
     isDeepenShareAfterDinInquiry(userInput, recentAssistantInputs)
@@ -485,7 +546,9 @@ export function resolveConversationStance(
   );
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
-    intent === "comfort_request" || intent === "companion_suggest"
+    intent === "comfort_request" ||
+    intent === "companion_suggest" ||
+    intent === "plan_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -585,6 +648,30 @@ const DEEPEN_SHARE_EXAMPLES = [
   "ユーザー「起きてからもショックで泣いてる」→「……今も続いてるのか。」",
   "（Din「何かあったか」への返答）ユーザー「うん、ちょっと」→「……どうした。」",
 ];
+
+const PLAN_SHARE_EXAMPLES = [
+  "ユーザー「桃とチーズを組み合わせてサラダを作ろう。」→「……ハチミツを回せ。……ルッコラは入れるか。」",
+  "ユーザー「今夜パスタにトマトとバジルを入れて作る。」→「……ニンニクは先に炒めろ。」",
+  "ユーザー「週末にこの機能を実装しよう。」→「……まず保存だけ先に作れ。」",
+  "ユーザー「新しいデザインを試してみる。」→「……余白だけ広げろ。……色はどうする。」",
+];
+
+function describePlanShareIntent(): string {
+  return [
+    "### 今回は「プランへの乗り」（最優先）",
+    "ユーザーはこれから作る・試す・組み合わせるなど、具体的なプランを宣言している。評価だけで終えない。",
+    "相棒として、素材・手順・選択肢のうち1点を具体的に足す。2文目は短い質問で掘り下げてもよい。",
+    "- 「良いアイデア」「美味しそう」「爽やか」「それは〜だ」など評価型だけで終えない",
+    "- ユーザーの案の言い換え・称賛・料理評論をしない",
+    "- 聞かれていない長いレシピ・手順リスト・説教は足さない",
+    "- 具体提案は1つ。質問は最大1つ（2文目に短く）",
+    "- 記憶帳の好みが自然に関係するなら1つだけ混ぜてよい",
+    "",
+    `制約: 1〜2文。合計${PLAN_SHARE_MAX_CHARS}字以内。必ず具体提案を1つ含める。`,
+    "型の例:",
+    ...PLAN_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
 
 function describeDeepenShareIntent(): string {
   return [
@@ -754,6 +841,14 @@ function describeIntentSpecificRules(stance: ConversationStance): string[] {
     ];
   }
 
+  if (stance.intent === "plan_share") {
+    return [
+      describePlanShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（プラン共有時は easygoing 固定）",
+      "- プラン共有時は評価コメントより具体提案＋短い掘り下げを最優先する",
+    ];
+  }
+
   if (stance.intent === "casual_share") {
     return [
       describeCasualShareIntent(),
@@ -791,7 +886,9 @@ export function describeConversationStance(stance: ConversationStance): string {
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
       : stance.intent === "companion_suggest"
         ? "受け止め: 具体的な提案で返す。評価だけ・空疎な正論だけで終えない。"
-        : stance.intent === "pushback"
+        : stance.intent === "plan_share"
+          ? "受け止め: プランに具体案を1つ足す。評価だけで終えず、必要なら短く掘り下げる。"
+          : stance.intent === "pushback"
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
@@ -806,7 +903,9 @@ export function describeConversationStance(stance: ConversationStance): string {
     "- 感情の言い換え・ラベル付け＋助言の型は使わない",
     stance.intent === "companion_suggest"
       ? "- 今回は具体的な提案を出してよい（上記「相棒としての提案」を優先）"
-      : stance.intent === "deepen_share"
+      : stance.intent === "plan_share"
+        ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
+        : stance.intent === "deepen_share"
         ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
         : "- 1ターンで完全な結論・まとめ・解決策を出さない",
     hideRegisterShape

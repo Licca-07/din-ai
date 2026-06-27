@@ -148,7 +148,9 @@ export async function POST(request: Request) {
           ? 0.62
           : conversationStance.intent === "companion_suggest"
             ? 0.68
-            : conversationStance.intent === "deepen_share"
+            : conversationStance.intent === "plan_share"
+              ? 0.68
+              : conversationStance.intent === "deepen_share"
               ? 0.66
               : conversationStance.intent === "casual_share"
               ? 0.58
