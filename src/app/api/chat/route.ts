@@ -143,7 +143,9 @@ export async function POST(request: Request) {
           ? 0.62
           : conversationStance.intent === "companion_suggest"
             ? 0.68
-            : conversationStance.intent === "casual_share"
+            : conversationStance.intent === "deepen_share"
+              ? 0.66
+              : conversationStance.intent === "casual_share"
               ? 0.58
               : conversationStance.intent === "pushback"
             ? 0.58

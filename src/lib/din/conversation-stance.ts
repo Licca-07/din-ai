@@ -17,7 +17,8 @@ export type ConversationStance = {
     | "profile_share"
     | "pushback"
     | "companion_suggest"
-    | "casual_share";
+    | "casual_share"
+    | "deepen_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -54,6 +55,15 @@ const CASUAL_SHARE_PATTERN =
 const CASUAL_SHARE_CONTINUATION_PATTERN =
   /風呂|お風呂|キャンドル|洗|皿|眠|寝|入ろ|アロマ|パチパチ|音|焚/i;
 
+/** 体験・感情を語りかけている（深める質問向け） */
+const DEEPEN_SHARE_PATTERN =
+  /夢|悪夢|泣|涙|止まら|ショック|殴|逃げ(?:られ)?|腹立|辛(?:かった|い)|起きて|見た(?:の|ん)|メチャクチャ|何があった|聞いてほしい|話したい|吐き出/i;
+
+const DEEPEN_SHARE_CONTINUATION_PATTERN =
+  /夢|殴|涙|泣|ショック|起き|腹|母|妹|続|逃げ|辛|わから|何|見|顔/i;
+
+const DEEPEN_SHARE_MIN_NARRATIVE_CHARS = 18;
+
 /** ユーザーが短い守り・慰めの実行を求めている */
 const COMFORT_REQUEST_PATTERN =
   /慰め|安心(?:できる|の)?(?:言|が必要)|こういう時|励まして|寄り添|(大丈夫|安心).*(?:言|言って|して|とか)|言(?:って|え).*(?:大丈夫|安心)|(?:ほしい|くれ).*慰め/i;
@@ -78,6 +88,7 @@ export function isSharedMoment(input: string): boolean {
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isComfortRequest(normalized)) return false;
   if (isCompanionSuggest(normalized)) return false;
+  if (isDeepenShare(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
 
@@ -117,6 +128,45 @@ export function isIdeaBounce(input: string): boolean {
 
 export function isCompanionSuggest(input: string): boolean {
   return isAdviceRequest(input) || isIdeaBounce(input);
+}
+
+export function isDeepenShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isPushback(normalized)
+  ) {
+    return false;
+  }
+  if (!DEEPEN_SHARE_PATTERN.test(normalized)) return false;
+  return normalized.length >= DEEPEN_SHARE_MIN_NARRATIVE_CHARS;
+}
+
+function isDeepenShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isComfortRequest(normalized)
+  ) {
+    return false;
+  }
+
+  const recentDeepen = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isDeepenShare(input) || DEEPEN_SHARE_PATTERN.test(input.trim()),
+    );
+
+  return recentDeepen && DEEPEN_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isCasualShare(input: string): boolean {
@@ -196,6 +246,8 @@ export const COMPANION_SUGGEST_MAX_TOKENS = 72;
 export const COMPANION_SUGGEST_MAX_CHARS = 60;
 export const CASUAL_SHARE_MAX_TOKENS = 48;
 export const CASUAL_SHARE_MAX_CHARS = 28;
+export const DEEPEN_SHARE_MAX_TOKENS = 72;
+export const DEEPEN_SHARE_MAX_CHARS = 52;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -227,6 +279,8 @@ export function maxTokensForIntent(
       return COMPANION_SUGGEST_MAX_TOKENS;
     case "casual_share":
       return CASUAL_SHARE_MAX_TOKENS;
+    case "deepen_share":
+      return DEEPEN_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -271,7 +325,7 @@ function resolveRegister(
     return "quiet";
   }
 
-  if (intent === "companion_suggest") {
+  if (intent === "companion_suggest" || intent === "deepen_share") {
     return "easygoing";
   }
 
@@ -354,6 +408,12 @@ function resolveIntent(
   if (isProfileShare(userInput)) return "profile_share";
   if (isCompanionSuggest(userInput)) return "companion_suggest";
   if (
+    isDeepenShare(userInput) ||
+    isDeepenShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "deepen_share";
+  }
+  if (
     isSharedMoment(userInput) ||
     isSharedMomentContinuation(userInput, recentUserInputs)
   ) {
@@ -380,7 +440,10 @@ export function resolveConversationStance(
       ? "agree"
       : intent === "pushback"
         ? "drift"
-        : intent === "shared_moment" || intent === "profile_share" || intent === "casual_share"
+        : intent === "shared_moment" ||
+            intent === "profile_share" ||
+            intent === "casual_share" ||
+            intent === "deepen_share"
           ? "neutral"
           : resolveResponsePosture(register);
 
@@ -466,10 +529,34 @@ const CASUAL_SHARE_EXAMPLES = [
   "ユーザー「お皿洗って、お風呂に入ろうかな」→「……入れ。」",
 ];
 
+const DEEPEN_SHARE_EXAMPLES = [
+  "ユーザー「怖い夢を見て逃げられなくて、涙が止まらない」→「……どんな夢だ。」",
+  "ユーザー「夢の中で母と妹を殴ってしまった」→「……何があった。」",
+  "ユーザー「起きてからもショックで泣いてる」→「……今も続いてるのか。」",
+];
+
+function describeDeepenShareIntent(): string {
+  return [
+    "### 今回は「深める質問」（最優先）",
+    "ユーザーが夢・辛い体験・感情を語り始めている。評価コメントや正論で返すな。",
+    "相棒として、ユーザーがまだ言っていない具体点を1つだけ短く問いかける。",
+    "- 「それは辛かった」「本当に辛い体験だ」などの評価型だけで終えない",
+    "- 「夢は現実と違う」など聞かれていない助言・正論・説教を足さない",
+    "- 感情の言い換え・分析・まとめをしない",
+    "- 汎用の「どう感じた」「大丈夫か」だけの質問も避ける",
+    "- ユーザーが言及した場面・人物・出来事のうち、まだ曖昧な1点だけを短く問う",
+    "- 尋問口調・長い質問・複数の質問は禁止",
+    "",
+    `制約: 1〜2文。合計${DEEPEN_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。句点（。）は最大2つ。`,
+    "型の例:",
+    ...DEEPEN_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeSharedMomentIntent(): string {
   return [
     "### 今回は「状況の共有」（最優先）",
-    "ユーザーは助言・調査・まとめ・慰めを求めていない。出来事や気持ちを置いているだけ。",
+    "ユーザーは短く出来事や気持ちを置いている。長い体験談・夢・涙の話はここではない。",
     "汎用アシスタント・カウンセラーの型で返すな。",
     "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
     "- 「それは〜だ」「大変だったな」などの評価型も避ける",
@@ -624,6 +711,14 @@ function describeIntentSpecificRules(stance: ConversationStance): string[] {
     ];
   }
 
+  if (stance.intent === "deepen_share") {
+    return [
+      describeDeepenShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（深める質問時は easygoing 固定）",
+      "- 深める質問時は評価コメントより短い質問を最優先する",
+    ];
+  }
+
   return [describeDefaultAntiAssistantRules()];
 }
 
@@ -651,14 +746,18 @@ export function describeConversationStance(stance: ConversationStance): string {
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
           : stance.intent === "casual_share"
             ? "受け止め: 会話に短く乗る。毎回評価・言い換え・助言で返さない。"
-            : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
+            : stance.intent === "deepen_share"
+              ? "受け止め: 評価や正論ではなく、具体点への短い質問で会話を深める。"
+              : `受け止め: ${POSTURE_HINTS[stance.posture]}`,
     "",
     "### 今回の返答で守ること",
     "- ChatGPT / 汎用アシスタント口調に戻らない。Din の人格（寡黙・俺・言い切り）を維持する",
     "- 感情の言い換え・ラベル付け＋助言の型は使わない",
     stance.intent === "companion_suggest"
       ? "- 今回は具体的な提案を出してよい（上記「相棒としての提案」を優先）"
-      : "- 1ターンで完全な結論・まとめ・解決策を出さない",
+      : stance.intent === "deepen_share"
+        ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
+        : "- 1ターンで完全な結論・まとめ・解決策を出さない",
     usesFixedIntent
       ? null
       : "- たまに言い直し・曖昧さ・間（そうだな、……）を入れてよい",
