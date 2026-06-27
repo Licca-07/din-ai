@@ -7,6 +7,7 @@ import {
   parseMemory,
   SAMPLE_USER_PROFILE,
 } from "@/lib/din/memory-schema";
+import { maxIsoTimestamp } from "@/lib/din/session-context";
 import type { StoredChatMessage } from "@/types/din-memory";
 import type { DinMemory } from "@/types/din-memory";
 
@@ -168,6 +169,38 @@ export function hasLocalMigrationSource(): boolean {
   if (typeof window === "undefined") return false;
 
   return MIGRATION_STORAGE_KEYS.some((key) => localStorage.getItem(key) !== null);
+}
+
+export function mergeCrossDeviceActivity(
+  base: DinMemory,
+  other: DinMemory,
+): DinMemory {
+  const lastAppOpenedAt = maxIsoTimestamp(
+    base.lastAppOpenedAt,
+    other.lastAppOpenedAt,
+  );
+  const lastConversationAt = maxIsoTimestamp(
+    base.lastConversationAt,
+    other.lastConversationAt,
+  );
+  const startupSource =
+    base.lastAppOpenedAt &&
+    lastAppOpenedAt === base.lastAppOpenedAt &&
+    (!other.lastAppOpenedAt ||
+      new Date(base.lastAppOpenedAt).getTime() >=
+        new Date(other.lastAppOpenedAt).getTime())
+      ? base
+      : other;
+
+  return {
+    ...base,
+    lastAppOpenedAt,
+    lastConversationAt,
+    lastStartupMessage:
+      startupSource.lastStartupMessage ??
+      base.lastStartupMessage ??
+      other.lastStartupMessage,
+  };
 }
 
 export function pickPreferredMemory(

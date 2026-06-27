@@ -24,6 +24,7 @@ import {
   isMeaningfulMemory,
   MEMORY_BACKUP_KEY,
   MEMORY_KEY,
+  mergeCrossDeviceActivity,
   pickPreferredMemory,
   readLocalStorageForMigration,
   scoreMemoryRichness,
@@ -176,10 +177,17 @@ export async function initMemory(): Promise<DinMemory> {
       lastSyncError = remoteError;
     }
 
-    const preferred = pickPreferredMemory(
+    let preferred = pickPreferredMemory(
       local,
       remote?.memory ?? null,
     );
+
+    if (preferred && local && remote?.memory) {
+      preferred = mergeCrossDeviceActivity(
+        mergeCrossDeviceActivity(preferred, local),
+        remote.memory,
+      );
+    }
 
     if (preferred && isMeaningfulMemory(preferred)) {
       if (local && scoreMemoryRichness(local) >= scoreMemoryRichness(preferred)) {
@@ -496,6 +504,9 @@ export function recordAppOpened(now = new Date()): void {
     lastAppOpenedAt: now.toISOString(),
   }));
   recordSessionVisit(now);
+  void flushMemorySync().catch((error) => {
+    console.error("[memory sync on app open]", error);
+  });
 }
 
 export function recordStartupGreetingShown(content: string): void {

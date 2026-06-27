@@ -124,6 +124,15 @@ export function getLastVisitIso(): string | null {
   return localStorage.getItem(LAST_VISIT_KEY);
 }
 
+export function maxIsoTimestamp(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
+}
+
 export function buildSessionContext(options?: {
   isGreeting?: boolean;
   conversationCount?: number;

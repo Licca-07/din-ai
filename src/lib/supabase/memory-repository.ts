@@ -13,6 +13,8 @@ type DinMemoryRow = {
   profile: DinMemory["profile"];
   conversation_count: number;
   last_conversation_at: string | null;
+  last_app_opened_at: string | null;
+  last_startup_message: string | null;
   chat_history: DinMemory["chatHistory"];
   long_term_memories: DinMemory["longTermMemories"];
   short_term_memories: DinMemory["shortTermMemories"];
@@ -31,6 +33,8 @@ function rowToMemory(row: DinMemoryRow): DinMemory | null {
     shortTermMemories: row.short_term_memories,
     followUpTopics: row.follow_up_topics,
     lastFollowUpTopicId: row.last_follow_up_topic_id,
+    lastAppOpenedAt: row.last_app_opened_at ?? null,
+    lastStartupMessage: row.last_startup_message ?? null,
   });
 }
 
@@ -45,6 +49,8 @@ function memoryToRow(memory: DinMemory): Omit<DinMemoryRow, "updated_at"> {
     short_term_memories: memory.shortTermMemories,
     follow_up_topics: memory.followUpTopics,
     last_follow_up_topic_id: memory.lastFollowUpTopicId,
+    last_app_opened_at: memory.lastAppOpenedAt,
+    last_startup_message: memory.lastStartupMessage,
   };
 }
 

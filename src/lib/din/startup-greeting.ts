@@ -4,7 +4,10 @@ import {
   readRecentProactiveSeeds,
   type ProactiveOpener,
 } from "@/lib/din/proactive-opener";
-import { getLastVisitIso } from "@/lib/din/session-context";
+import {
+  getLastVisitIso,
+  maxIsoTimestamp,
+} from "@/lib/din/session-context";
 import type { DinMemory } from "@/types/din-memory";
 
 export const STARTUP_SILENT_MAX_MS = 4 * 60 * 60 * 1000;
@@ -53,12 +56,10 @@ export function resetStartupGreetingRandom(): void {
 }
 
 export function getEffectiveLastAppOpenedAt(memory: DinMemory): string | null {
-  if (memory.lastAppOpenedAt) return memory.lastAppOpenedAt;
-
-  const localVisit = getLastVisitIso();
-  if (localVisit) return localVisit;
-
-  return null;
+  return maxIsoTimestamp(
+    maxIsoTimestamp(memory.lastAppOpenedAt, memory.lastConversationAt),
+    getLastVisitIso(),
+  );
 }
 
 export function getElapsedMsSinceLastOpen(
