@@ -99,10 +99,15 @@ export async function POST(request: Request) {
       .filter((message) => message.role === "user")
       .map((message) => message.content);
 
+    const recentAssistantInputs = body.messages
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content);
+
     const conversationStance = resolveConversationStance(
       latestUserInput,
       sessionContext,
       recentUserInputs,
+      recentAssistantInputs,
     );
 
     const completionMessages =

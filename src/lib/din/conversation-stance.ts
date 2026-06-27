@@ -62,7 +62,15 @@ const DEEPEN_SHARE_PATTERN =
 const DEEPEN_SHARE_CONTINUATION_PATTERN =
   /夢|殴|涙|泣|ショック|起き|腹|母|妹|続|逃げ|辛|わから|何|見|顔/i;
 
+/** 短い一言でも深掘り対象（悪夢・涙など） */
+const DEEPEN_SHARE_STRONG_PATTERN =
+  /悪夢|夢|泣|涙|殴|ショック|逃げ(?:られ)?|止まら|メチャクチャ/i;
+
 const DEEPEN_SHARE_MIN_NARRATIVE_CHARS = 18;
+
+/** Din が「何かあった？」等と聞いた直後 */
+const DIN_INQUIRY_PATTERN =
+  /何かあった|どうした|どうだった|用件は|続きは|元気(?:か|じゃ)/i;
 
 /** ユーザーが短い守り・慰めの実行を求めている */
 const COMFORT_REQUEST_PATTERN =
@@ -142,7 +150,28 @@ export function isDeepenShare(input: string): boolean {
     return false;
   }
   if (!DEEPEN_SHARE_PATTERN.test(normalized)) return false;
+  if (DEEPEN_SHARE_STRONG_PATTERN.test(normalized)) return true;
   return normalized.length >= DEEPEN_SHARE_MIN_NARRATIVE_CHARS;
+}
+
+function isDeepenShareAfterDinInquiry(
+  userInput: string,
+  recentAssistantInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || normalized.length > 80) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isCompanionSuggest(normalized)) return false;
+
+  const lastAssistant = recentAssistantInputs.at(-1)?.trim() ?? "";
+  if (!DIN_INQUIRY_PATTERN.test(lastAssistant)) return false;
+
+  return (
+    DEEPEN_SHARE_STRONG_PATTERN.test(normalized) ||
+    EMOTIONAL_VENT_PATTERN.test(normalized) ||
+    SHARED_MOMENT_PATTERN.test(normalized) ||
+    normalized.length >= 2
+  );
 }
 
 function isDeepenShareContinuation(
@@ -412,6 +441,7 @@ export function resolveResponsePosture(
 function resolveIntent(
   userInput: string,
   recentUserInputs: readonly string[],
+  recentAssistantInputs: readonly string[] = [],
 ): ConversationStance["intent"] {
   if (isPushback(userInput)) return "pushback";
   if (isComfortRequest(userInput)) return "comfort_request";
@@ -422,7 +452,8 @@ function resolveIntent(
   if (isCompanionSuggest(userInput)) return "companion_suggest";
   if (
     isDeepenShare(userInput) ||
-    isDeepenShareContinuation(userInput, recentUserInputs)
+    isDeepenShareContinuation(userInput, recentUserInputs) ||
+    isDeepenShareAfterDinInquiry(userInput, recentAssistantInputs)
   ) {
     return "deepen_share";
   }
@@ -445,8 +476,13 @@ export function resolveConversationStance(
   userInput: string,
   context?: DinSessionContext,
   recentUserInputs: readonly string[] = [],
+  recentAssistantInputs: readonly string[] = [],
 ): ConversationStance {
-  const intent = resolveIntent(userInput, recentUserInputs);
+  const intent = resolveIntent(
+    userInput,
+    recentUserInputs,
+    recentAssistantInputs,
+  );
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
     intent === "comfort_request" || intent === "companion_suggest"
@@ -543,9 +579,11 @@ const CASUAL_SHARE_EXAMPLES = [
 ];
 
 const DEEPEN_SHARE_EXAMPLES = [
-  "ユーザー「怖い夢を見て逃げられなくて、涙が止まらない」→「……どんな夢だ。」",
+  "ユーザー「悪夢を見た」→「……どんな夢だ。」",
+  "ユーザー「怖い夢を見て逃げられなくて、涙が止まらない」→「……逃げられなかったのか。」",
   "ユーザー「夢の中で母と妹を殴ってしまった」→「……何があった。」",
   "ユーザー「起きてからもショックで泣いてる」→「……今も続いてるのか。」",
+  "（Din「何かあったか」への返答）ユーザー「うん、ちょっと」→「……どうした。」",
 ];
 
 function describeDeepenShareIntent(): string {
