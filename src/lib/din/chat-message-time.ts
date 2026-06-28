@@ -1,4 +1,8 @@
-import { formatJournalDateLabel, getJournalDateJst } from "@/lib/din/journal-date";
+import {
+  formatJournalDateLabel,
+  getJournalDateJst,
+  getPreviousJournalDateJst,
+} from "@/lib/din/journal-date";
 import type { StoredChatMessage } from "@/types/din-memory";
 
 const MINUTE_MS = 60 * 1000;
@@ -56,9 +60,7 @@ export function formatChatDateDividerLabel(
 ): string {
   const messageDay = getChatMessageDayKey(createdAt);
   const todayDay = getJournalDateJst(now);
-  const yesterdayDay = getJournalDateJst(
-    new Date(now.getTime() - 24 * 60 * 60 * 1000),
-  );
+  const yesterdayDay = getPreviousJournalDateJst(now);
 
   if (messageDay === todayDay) return "今日";
   if (messageDay === yesterdayDay) return "昨日";

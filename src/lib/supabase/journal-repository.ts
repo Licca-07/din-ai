@@ -1,4 +1,5 @@
 import type { DinJournal } from "@/types/journal";
+import { normalizeJournalDate } from "@/lib/din/journal-date";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type DinJournalRow = {
@@ -15,7 +16,7 @@ const DEFAULT_WAIT_INTERVAL_MS = 500;
 function rowToJournal(row: DinJournalRow): DinJournal {
   return {
     id: row.id,
-    journalDate: row.journal_date,
+    journalDate: normalizeJournalDate(row.journal_date),
     content: row.content,
     createdAt: row.created_at,
   };

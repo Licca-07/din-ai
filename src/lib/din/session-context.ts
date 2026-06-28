@@ -1,4 +1,10 @@
 import { loadConversationCount } from "@/lib/din/conversation-count";
+import {
+  getJournalDateDiffDays,
+  getJournalDateJst,
+  getJstHour,
+  getJstWeekday,
+} from "@/lib/din/journal-date";
 
 export type DinTimeBand = "morning" | "afternoon" | "evening" | "late_night";
 
@@ -26,10 +32,6 @@ export type DinSessionContext = {
 const LAST_VISIT_KEY = "din-ai-last-visit";
 const LATE_NIGHT_VISITS_KEY = "din-ai-late-night-visits";
 
-function getJstDate(date = new Date()): Date {
-  return new Date(date.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-}
-
 export function formatCurrentDateTimeJst(date = new Date()): string {
   const formatted = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -46,7 +48,7 @@ export function formatCurrentDateTimeJst(date = new Date()): string {
 }
 
 export function getTimeBand(date = new Date()): DinTimeBand {
-  const hour = getJstDate(date).getHours();
+  const hour = getJstHour(date);
 
   if (hour >= 0 && hour < 5) return "late_night";
   if (hour >= 5 && hour < 11) return "morning";
@@ -55,16 +57,17 @@ export function getTimeBand(date = new Date()): DinTimeBand {
 }
 
 export function getDayType(date = new Date()): DinDayType {
-  const day = getJstDate(date).getDay();
+  const day = getJstWeekday(date);
   return day === 0 || day === 6 ? "weekend" : "weekday";
 }
 
 export function getAbsence(lastVisitIso: string | null, now = new Date()): DinAbsence {
   if (!lastVisitIso) return "normal";
 
-  const lastVisit = new Date(lastVisitIso);
-  const diffMs = now.getTime() - lastVisit.getTime();
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const diffDays = getJournalDateDiffDays(
+    getJournalDateJst(new Date(lastVisitIso)),
+    getJournalDateJst(now),
+  );
 
   if (diffDays >= 7) return "one_week";
   if (diffDays >= 3) return "three_days";

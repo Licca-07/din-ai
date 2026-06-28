@@ -1,4 +1,5 @@
 import { getJournalDateJst } from "@/lib/din/journal-date";
+import { getChatMessageDayKey } from "@/lib/din/chat-message-time";
 import {
   buildJournalUserPrompt,
   JOURNAL_SYSTEM_PROMPT,
@@ -48,7 +49,13 @@ export async function generateDailyJournalIfNeeded(
     }
 
     const { memory } = await fetchMemoryFromSupabase();
-    const recentMessages = memory.chatHistory.slice(-20);
+    const messagesForDay = memory.chatHistory.filter(
+      (message) => getChatMessageDayKey(message.createdAt) === journalDate,
+    );
+    const recentMessages =
+      messagesForDay.length > 0
+        ? messagesForDay.slice(-20)
+        : memory.chatHistory.slice(-20);
 
     if (recentMessages.length === 0) {
       return { created: false, skipped: true, reason: "no_chat_history" };
