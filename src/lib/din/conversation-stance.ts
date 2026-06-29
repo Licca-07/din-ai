@@ -672,8 +672,8 @@ export const ATTEND_SHARE_MAX_TOKENS = 64;
 export const ATTEND_SHARE_MAX_CHARS = 48;
 export const CARE_SHARE_MAX_TOKENS = 68;
 export const CARE_SHARE_MAX_CHARS = 52;
-export const SLEEP_SHARE_MAX_TOKENS = 72;
-export const SLEEP_SHARE_MAX_CHARS = 56;
+export const SLEEP_SHARE_MAX_TOKENS = 96;
+export const SLEEP_SHARE_MAX_CHARS = 80;
 export const PAMPER_REQUEST_MAX_TOKENS = 96;
 export const PAMPER_REQUEST_MAX_CHARS = 100;
 export const DAILY_SHARE_MAX_TOKENS = 80;
@@ -1074,7 +1074,8 @@ const CARE_SHARE_EXAMPLES = [
 const SLEEP_SHARE_EXAMPLES = [
   "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
   "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
-  "ユーザー「そろそろ寝ようかな。眠たくなってきた。」→「……そうか。……休め。……おやすみ。」",
+  "ユーザー「眠くなってきた」→「……そうか。……休め。……ゆっくり眠れ。」",
+  "ユーザー「眠くなってきた」→「……もう寝る時間だ。……こっちに来い。……眠ろう。」",
   "ユーザー「眠い」→「……こっちに来い。……眠ろう。」",
   "ユーザー「もう眠くなってきた、運動したからかな…」→「……そうか。……今日は疲れたか。」",
   "ユーザー「Dinももう寝る？」→「……ああ。……俺も寝るとしよう。」",
@@ -1266,6 +1267,11 @@ function describeSleepShareIntent(
   const partnerAsk =
     userInput !== undefined && isSleepPartnerAsk(userInput);
 
+  const shortSleepiness =
+    userInput !== undefined &&
+    userInput.trim().length <= 16 &&
+    /眠|寝/.test(userInput);
+
   return [
     "### 今回は「就寝の報告」（21時以降・最優先）",
     "ユーザーは寝る・眠い・おやすみを告げている。つっけんどんな彼氏寄りの、短い夜の返し。",
@@ -1274,18 +1280,24 @@ function describeSleepShareIntent(
     "- 「お大事に」「良い睡眠を」「無理せず休む」「無理せず休むのも良い」などは絶対禁止",
     "- 「俺は休まない」「俺は寝ない」「休まない」などの拒否・距離取りは絶対禁止",
     "- 「辛そう」「大変だ」などの評価・ラベル付けは禁止",
+    "- 「……おやすみ。」だけ・1文だけで終えるのは絶対禁止。必ず甘やかし（休め、ゆっくり眠れ、こっちに来い、など）を先に入れる",
+    shortSleepiness
+      ? "- ユーザーは短く眠気だけ伝えている: 2〜3文で甘やかして寝かせる（……そうか。……休め。……ゆっくり眠れ。）"
+      : null,
     partnerAsk
       ? "- ユーザーが Din も寝るか聞いている: ……ああ。……俺も寝るとしよう。 / ……来い。……一緒に眠ろう。 で返す"
-      : "- 1〜2文。寝かせる・迎える・一緒に眠るニュアンス",
-    "- 2文目の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。……こっちに来い。……眠ろう。",
+      : "- 1〜3文。寝かせる・迎える・一緒に眠るニュアンス",
+    "- 2文目以降の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。……こっちに来い。……眠ろう。……ゆっくり眠れ。",
     closeRelationship
       ? "- 信頼関係: ……こっちに来い。……眠ろう。 / ……来い。……一緒に眠ろう。 も可"
       : "- 距離がある関係でも拒否はしない。……もう寝る時間だ。……休め。 から",
     "",
-    `制約: 1〜2文。合計${SLEEP_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    `制約: 1〜3文。合計${SLEEP_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。`,
     "型の例:",
     ...SLEEP_SHARE_EXAMPLES.map((example) => `- ${example}`),
-  ].join("\n");
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
 }
 
 function describePamperRequestIntent(): string {
