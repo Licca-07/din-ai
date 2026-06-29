@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatJournalDateLabel } from "@/lib/din/journal-date";
+import JournalBody from "@/components/JournalBody";
 import { fetchAllJournals } from "@/lib/din/journal-client";
 import type { DinJournal } from "@/types/journal";
 
@@ -97,8 +98,8 @@ export default function JournalBook({ refreshKey }: JournalBookProps) {
               >
                 {formatJournalDateLabel(journal.journalDate)}
               </time>
-              <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-zinc-100">
-                {journal.content}
+              <div className="mt-4">
+                <JournalBody journal={journal} />
               </div>
             </article>
           ))}

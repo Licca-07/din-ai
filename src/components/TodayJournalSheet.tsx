@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { formatJournalDateLabel } from "@/lib/din/journal-date";
+import JournalBody from "@/components/JournalBody";
 import type { DinJournal } from "@/types/journal";
 
 type TodayJournalSheetProps = {
@@ -90,11 +91,7 @@ export default function TodayJournalSheet({
             </div>
           )}
 
-          {!isLoading && !error && journal && (
-            <div className="whitespace-pre-wrap text-sm leading-7 text-zinc-100">
-              {journal.content}
-            </div>
-          )}
+          {!isLoading && !error && journal && <JournalBody journal={journal} />}
         </div>
       </section>
     </div>

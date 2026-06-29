@@ -1,10 +1,11 @@
 import { getJournalDateJst } from "@/lib/din/journal-date";
 import { getChatMessageDayKey } from "@/lib/din/chat-message-time";
-import {
-  buildJournalUserPrompt,
-  JOURNAL_SYSTEM_PROMPT,
-} from "@/lib/prompts/din-journal-prompt";
+import { generateDinDiary } from "@/lib/din/din-diary-generator";
 import { fetchMemoryFromSupabase } from "@/lib/supabase/memory-repository";
+import {
+  fetchJournalContinuity,
+  saveJournalContinuity,
+} from "@/lib/supabase/journal-continuity-repository";
 import {
   clearStaleJournalGenerationLock,
   fetchJournalByDate,
@@ -14,7 +15,6 @@ import {
   tryAcquireJournalGenerationLock,
   waitForJournalByDate,
 } from "@/lib/supabase/journal-repository";
-import { getOpenAIClient, getOpenAIModelMini } from "@/lib/openai";
 import type { JournalGenerateResponse } from "@/types/journal";
 
 async function waitForExistingJournal(journalDate: string) {
@@ -48,7 +48,11 @@ export async function generateDailyJournalIfNeeded(
       return { created: false, journal: existingAfterLock };
     }
 
-    const { memory } = await fetchMemoryFromSupabase();
+    const [{ memory }, continuity] = await Promise.all([
+      fetchMemoryFromSupabase(),
+      fetchJournalContinuity(),
+    ]);
+
     const messagesForDay = memory.chatHistory.filter(
       (message) => getChatMessageDayKey(message.createdAt) === journalDate,
     );
@@ -61,33 +65,24 @@ export async function generateDailyJournalIfNeeded(
       return { created: false, skipped: true, reason: "no_chat_history" };
     }
 
-    const openai = getOpenAIClient();
-    const model = getOpenAIModelMini();
-
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: JOURNAL_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: buildJournalUserPrompt({
-            journalDate,
-            profile: memory.profile,
-            recentMessages,
-            longTermMemories: memory.longTermMemories,
-            shortTermMemories: memory.shortTermMemories,
-          }),
-        },
-      ],
-      temperature: 0.7,
+    const diary = await generateDinDiary({
+      journalDate,
+      profile: memory.profile,
+      recentMessages,
+      longTermMemories: memory.longTermMemories,
+      shortTermMemories: memory.shortTermMemories,
+      continuity,
     });
 
-    const content = completion.choices[0]?.message?.content?.trim();
-    if (!content) {
-      throw new Error("日記本文を生成できませんでした。");
-    }
+    const journal = await insertJournal({
+      journalDate,
+      content: diary.conversationContent,
+      margin: diary.margin,
+    });
 
-    const journal = await insertJournal({ journalDate, content });
+    if (diary.margin) {
+      await saveJournalContinuity(diary.continuity);
+    }
 
     return { created: true, journal };
   } finally {
@@ -98,3 +93,5 @@ export async function generateDailyJournalIfNeeded(
 export async function listJournals() {
   return fetchJournals();
 }
+
+export { generateDinDiary } from "@/lib/din/din-diary-generator";

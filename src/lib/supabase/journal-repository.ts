@@ -6,6 +6,7 @@ type DinJournalRow = {
   id: string;
   journal_date: string;
   content: string;
+  margin: string | null;
   created_at: string;
 };
 
@@ -18,6 +19,7 @@ function rowToJournal(row: DinJournalRow): DinJournal {
     id: row.id,
     journalDate: normalizeJournalDate(row.journal_date),
     content: row.content,
+    margin: row.margin?.trim() || null,
     createdAt: row.created_at,
   };
 }
@@ -137,6 +139,7 @@ export async function waitForJournalByDate(
 export async function insertJournal(input: {
   journalDate: string;
   content: string;
+  margin?: string | null;
 }): Promise<DinJournal> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -144,6 +147,7 @@ export async function insertJournal(input: {
     .insert({
       journal_date: input.journalDate,
       content: input.content.trim(),
+      margin: input.margin?.trim() || null,
     })
     .select("*")
     .single();
