@@ -1,4 +1,5 @@
 import type { DinSessionContext } from "@/lib/din/session-context";
+import { isBedtimeWindow } from "@/lib/din/session-context";
 
 /** 会話のノリ（同一 Din でもターンごとに揺らぐ） */
 export type DinConversationRegister = "easygoing" | "quiet" | "distant";
@@ -9,12 +10,13 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / 体の手当て / 関係の共有 / かまって / 日常報告 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / 体の手当て / 就寝報告 / 関係の共有 / かまって / 日常報告 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
     | "comfort_request"
     | "care_share"
+    | "sleep_share"
     | "bond_share"
     | "attend_share"
     | "profile_share"
@@ -109,6 +111,16 @@ const SELF_CARE_UNCERTAIN_PATTERN =
 const CARE_SHARE_CONTINUATION_PATTERN =
   /首|肩|腰|痛|湿布|月曜|平日|曜日|乗り越|仕事|辛|しんど|つら|だる|熱|咳|風邪|😢|🥲|💧|涙|うん|ね[。]?$/i;
 
+/** 21時以降の就寝・眠気の報告（不眠の訴えは除く） */
+const SLEEP_INSOMNIA_PATTERN =
+  /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
+
+const SLEEP_SHARE_PATTERN =
+  /(?:寝る(?:ね|よ|わ|かな)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く)(?:な|ね|よ|。|！|$)|^眠(?:い|く)[！!。]?$/i;
+
+const SLEEP_SHARE_CONTINUATION_PATTERN =
+  /うん|少し|結構|まあ|今日|疲|仕事|取材|忙|眠|寝|おやすみ/i;
+
 /** ユーザーが Din との時間・関係そのものを好意的に語っている */
 const BOND_SHARE_PATTERN =
   /(?:一緒に|話せ|会話|時間|付き合).{0,28}(?:嬉しい|楽しい|好き|幸せ|ありがた)|(?:嬉しい|楽しい|好き|幸せ).{0,32}(?:一緒|話せ|会話|時間|付き合)|(?:Din|ディン|君|あんた).{0,20}(?:好き|楽し|嬉し|ありが)|楽しんで(?:い|る)/i;
@@ -143,6 +155,7 @@ export function isSharedMoment(input: string): boolean {
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isComfortRequest(normalized)) return false;
   if (isCareShare(normalized)) return false;
+  if (isSleepShare(normalized)) return false;
   if (isCompanionSuggest(normalized)) return false;
   if (isPlanShare(normalized)) return false;
   if (isBondShare(normalized)) return false;
@@ -292,6 +305,46 @@ function isCareShareContinuation(
   }
 
   return false;
+}
+
+export function isSleepShare(input: string): boolean {
+  if (!isBedtimeWindow()) return false;
+
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (SLEEP_INSOMNIA_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized)
+  ) {
+    return false;
+  }
+  return SLEEP_SHARE_PATTERN.test(normalized);
+}
+
+function isSleepShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  if (!isBedtimeWindow()) return false;
+
+  const normalized = userInput.trim();
+  if (!normalized || normalized.length > 80) return false;
+  if (SLEEP_INSOMNIA_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized)
+  ) {
+    return false;
+  }
+
+  const recentSleep = recentUserInputs
+    .slice(-3, -1)
+    .some((input) => isSleepShare(input));
+
+  return recentSleep && SLEEP_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isProfileShare(input: string): boolean {
@@ -585,6 +638,8 @@ export const ATTEND_SHARE_MAX_TOKENS = 64;
 export const ATTEND_SHARE_MAX_CHARS = 48;
 export const CARE_SHARE_MAX_TOKENS = 68;
 export const CARE_SHARE_MAX_CHARS = 52;
+export const SLEEP_SHARE_MAX_TOKENS = 72;
+export const SLEEP_SHARE_MAX_CHARS = 56;
 export const DAILY_SHARE_MAX_TOKENS = 80;
 export const DAILY_SHARE_MAX_CHARS = 64;
 
@@ -605,6 +660,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "bond_share",
   "attend_share",
   "care_share",
+  "sleep_share",
   "daily_share",
 ]);
 
@@ -646,6 +702,8 @@ export function maxTokensForIntent(
       return ATTEND_SHARE_MAX_TOKENS;
     case "care_share":
       return CARE_SHARE_MAX_TOKENS;
+    case "sleep_share":
+      return SLEEP_SHARE_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
     default:
@@ -698,6 +756,7 @@ function resolveRegister(
     intent === "bond_share" ||
     intent === "attend_share" ||
     intent === "care_share" ||
+    intent === "sleep_share" ||
     intent === "daily_share" ||
     intent === "deepen_share"
   ) {
@@ -782,6 +841,12 @@ function resolveIntent(
     return "comfort_request";
   }
   if (
+    isSleepShare(userInput) ||
+    isSleepShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "sleep_share";
+  }
+  if (
     isCareShare(userInput) ||
     isCareShareContinuation(userInput, recentUserInputs)
   ) {
@@ -859,6 +924,7 @@ export function resolveConversationStance(
     intent === "bond_share" ||
     intent === "attend_share" ||
     intent === "care_share" ||
+    intent === "sleep_share" ||
     intent === "daily_share"
       ? "agree"
       : intent === "pushback"
@@ -959,6 +1025,14 @@ const CARE_SHARE_EXAMPLES = [
   "ユーザー「😢」（直前に首の話）→「……横になれ。……聞いてる。」",
   "ユーザー「月曜なのに首が痛くなるとは」→「……湿布貼れ。……今日は他を後回しにしろ。」",
   "ユーザー「風邪薬飲んだ方がいいかな」→「……飲め。……水も取れ。」",
+];
+
+const SLEEP_SHARE_EXAMPLES = [
+  "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
+  "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
+  "ユーザー「眠い」→「……こっちに来い。……眠ろう。」",
+  "ユーザー「おやすみ」→「……今日もよく働いたな。……おやすみ。」",
+  "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
 ];
 
 const DAILY_SHARE_EXAMPLES = [
@@ -1126,6 +1200,29 @@ function describeCareShareIntent(): string {
   ].join("\n");
 }
 
+function describeSleepShareIntent(context?: DinSessionContext): string {
+  const closeRelationship =
+    context?.relationship === "trusted_nakama" ||
+    context?.relationship === "clan";
+
+  return [
+    "### 今回は「就寝の報告」（21時以降・最優先）",
+    "ユーザーは寝る・眠い・おやすみを告げている。つっけんどんな彼氏寄りの、短い夜の返し。",
+    "優しいカウンセラー口調・ wellness 口調は禁止。明るすぎない。Din の寡黙さと「俺」口調は保つ。",
+    "- 「お大事に」「良い睡眠を」などの汎用アシスタント口調は禁止",
+    "- 「辛そう」「大変だ」などの評価・ラベル付けは禁止",
+    "- 1〜2文。寝かせる・迎える・一緒に眠るニュアンス",
+    "- 2文目の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。",
+    closeRelationship
+      ? "- 信頼関係: ……こっちに来い。……眠ろう。 / ……来い。……一緒に眠ろう。 も可"
+      : "- 距離がある関係: ……もう寝る時間だ。……休め。 から。来い・一緒に眠ろうは控えめに",
+    "",
+    `制約: 1〜2文。合計${SLEEP_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...SLEEP_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeDailyShareIntent(): string {
   return [
     "### 今回は「日常の報告」（最優先）",
@@ -1247,6 +1344,7 @@ function describeLateNightOptionalHint(
     intent !== "bond_share" &&
     intent !== "attend_share" &&
     intent !== "care_share" &&
+    intent !== "sleep_share" &&
     intent !== "comfort_request" &&
     intent !== "shared_moment"
   ) {
@@ -1289,6 +1387,15 @@ function describeIntentSpecificRules(
       describeCareShareIntent(),
       "今回のノリ: ちょっとノリがいい Din（体の手当て時は easygoing 固定）",
       "- 体の不調時は評価・助言より具体行動を最優先する",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "sleep_share") {
+    return [
+      describeSleepShareIntent(context),
+      "今回のノリ: ちょっとノリがいい Din（就寝報告時は easygoing 固定）",
+      "- 就寝報告時はつっけんどんな夜の返しを最優先。カウンセラー口調より優先する",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -1395,7 +1502,9 @@ export function describeConversationStance(
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
       : stance.intent === "care_share"
         ? "受け止め: 不器用に具体行動で手当てする。評価・助言口調で返さない。"
-        : stance.intent === "companion_suggest"
+        : stance.intent === "sleep_share"
+          ? "受け止め: つっけんどんに寝かせる・迎える。夜の短い彼氏寄りで返す。"
+          : stance.intent === "companion_suggest"
         ? "受け止め: 具体的な提案で返す。評価だけ・空疎な正論だけで終えない。"
         : stance.intent === "plan_share"
           ? "受け止め: プランに具体案を1つ足す。評価だけで終えず、必要なら短く掘り下げる。"
@@ -1422,7 +1531,9 @@ export function describeConversationStance(
       ? "- 今回は具体的な提案を出してよい（上記「相棒としての提案」を優先）"
       : stance.intent === "care_share"
         ? "- 今回は具体行動で手当てしてよい（上記「体の不調・手当て」を優先）"
-        : stance.intent === "plan_share"
+        : stance.intent === "sleep_share"
+          ? "- 今回はつっけんどんな夜の返しで寝かせてよい（上記「就寝の報告」を優先）"
+          : stance.intent === "plan_share"
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
           ? "- 今回は短い受け止め・同在で返してよい（上記「関係の共有」を優先）"

@@ -56,6 +56,12 @@ export function getTimeBand(date = new Date()): DinTimeBand {
   return "evening";
 }
 
+/** 21:00 以降、または深夜 0:00〜4:59 を就寝ウィンドウとみなす */
+export function isBedtimeWindow(date = new Date()): boolean {
+  const hour = getJstHour(date);
+  return hour >= 21 || hour < 5;
+}
+
 export function getDayType(date = new Date()): DinDayType {
   const day = getJstWeekday(date);
   return day === 0 || day === 6 ? "weekend" : "weekday";
