@@ -1,5 +1,5 @@
 import type { DinSessionContext } from "@/lib/din/session-context";
-import { isBedtimeWindow } from "@/lib/din/session-context";
+import { isBedtimeWindow, isSleepTimeContext } from "@/lib/din/session-context";
 
 /** 会話のノリ（同一 Din でもターンごとに揺らぐ） */
 export type DinConversationRegister = "easygoing" | "quiet" | "distant";
@@ -25,7 +25,8 @@ export type ConversationStance = {
     | "plan_share"
     | "daily_share"
     | "casual_share"
-    | "deepen_share";
+    | "deepen_share"
+    | "pamper_request";
 };
 
 const CASUAL_USER_PATTERN =
@@ -97,6 +98,10 @@ const DEEPEN_SHARE_MIN_NARRATIVE_CHARS = 18;
 const DIN_INQUIRY_PATTERN =
   /何かあった|どうした|どうだった|用件は|続きは|元気(?:か|じゃ)/i;
 
+/** ユーザーが甘やかし・優しさを求めている */
+const PAMPER_REQUEST_PATTERN =
+  /甘やかして|甘やかして(?:もら|ほしい)|もっと(?:優し|Din|甘)|かわいがって|可愛がって|構って|ねーえ|ねええ|滅入|だめだ、今日/i;
+
 /** ユーザーが短い守り・慰め・同在を求めている */
 const COMFORT_REQUEST_PATTERN =
   /慰め|安心(?:できる|の)?(?:言|が必要)|こういう時|励まして|寄り添|そばに(?:いて|い)?|一緒に(?:いて|い)|(?:いて|い)てほしい|離れないで|(大丈夫|安心).*(?:言|言って|して|とか)|言(?:って|え).*(?:大丈夫|安心)|(?:ほしい|くれ).*慰め/i;
@@ -116,7 +121,7 @@ const SLEEP_INSOMNIA_PATTERN =
   /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
 
 const SLEEP_SHARE_PATTERN =
-  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く)(?:な|ね|よ|って|気|)|眠くなって|うとうと|^眠(?:い|く)[！!。]?$/i;
+  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$/i;
 
 const SLEEP_PARTNER_ASK_PATTERN =
   /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠)|(?:一緒|一緒に).{0,8}(?:寝|眠)/i;
@@ -251,10 +256,18 @@ function isAttendShareContinuation(
   return recentAttend && ATTEND_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
+export function isPamperRequest(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  return PAMPER_REQUEST_PATTERN.test(normalized);
+}
+
 export function isComfortRequest(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPamperRequest(normalized)) return false;
   return COMFORT_REQUEST_PATTERN.test(normalized);
 }
 
@@ -310,8 +323,11 @@ function isCareShareContinuation(
   return false;
 }
 
-export function isSleepShare(input: string): boolean {
-  if (!isBedtimeWindow()) return false;
+export function isSleepShare(
+  input: string,
+  context?: DinSessionContext,
+): boolean {
+  if (!isSleepTimeContext(context)) return false;
 
   const normalized = input.trim();
   if (!normalized) return false;
@@ -319,6 +335,7 @@ export function isSleepShare(input: string): boolean {
   if (
     isPushback(normalized) ||
     isComfortRequest(normalized) ||
+    isPamperRequest(normalized) ||
     isCompanionSuggest(normalized)
   ) {
     return false;
@@ -336,8 +353,9 @@ export function isSleepPartnerAsk(input: string): boolean {
 function isSleepShareContinuation(
   userInput: string,
   recentUserInputs: readonly string[],
+  context?: DinSessionContext,
 ): boolean {
-  if (!isBedtimeWindow()) return false;
+  if (!isSleepTimeContext(context)) return false;
 
   const normalized = userInput.trim();
   if (!normalized || normalized.length > 80) return false;
@@ -656,6 +674,8 @@ export const CARE_SHARE_MAX_TOKENS = 68;
 export const CARE_SHARE_MAX_CHARS = 52;
 export const SLEEP_SHARE_MAX_TOKENS = 72;
 export const SLEEP_SHARE_MAX_CHARS = 56;
+export const PAMPER_REQUEST_MAX_TOKENS = 96;
+export const PAMPER_REQUEST_MAX_CHARS = 100;
 export const DAILY_SHARE_MAX_TOKENS = 80;
 export const DAILY_SHARE_MAX_CHARS = 64;
 
@@ -678,6 +698,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "care_share",
   "sleep_share",
   "daily_share",
+  "pamper_request",
 ]);
 
 export function usesIntentShapeOverride(
@@ -720,6 +741,8 @@ export function maxTokensForIntent(
       return CARE_SHARE_MAX_TOKENS;
     case "sleep_share":
       return SLEEP_SHARE_MAX_TOKENS;
+    case "pamper_request":
+      return PAMPER_REQUEST_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
     default:
@@ -759,6 +782,7 @@ function resolveRegister(
   if (
     intent === "shared_moment" ||
     intent === "comfort_request" ||
+    intent === "pamper_request" ||
     intent === "profile_share" ||
     intent === "pushback" ||
     intent === "casual_share"
@@ -850,15 +874,17 @@ function resolveIntent(
   userInput: string,
   recentUserInputs: readonly string[],
   recentAssistantInputs: readonly string[] = [],
+  context?: DinSessionContext,
 ): ConversationStance["intent"] {
   if (isPushback(userInput)) return "pushback";
+  if (isPamperRequest(userInput)) return "pamper_request";
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
   }
   if (
-    isSleepShare(userInput) ||
-    isSleepShareContinuation(userInput, recentUserInputs)
+    isSleepShare(userInput, context) ||
+    isSleepShareContinuation(userInput, recentUserInputs, context)
   ) {
     return "sleep_share";
   }
@@ -931,10 +957,12 @@ export function resolveConversationStance(
     userInput,
     recentUserInputs,
     recentAssistantInputs,
+    context,
   );
   const register = resolveRegister(userInput.trim(), context, intent);
   const posture =
     intent === "comfort_request" ||
+    intent === "pamper_request" ||
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
@@ -1046,12 +1074,21 @@ const CARE_SHARE_EXAMPLES = [
 const SLEEP_SHARE_EXAMPLES = [
   "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
   "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
+  "ユーザー「そろそろ寝ようかな。眠たくなってきた。」→「……そうか。……休め。……おやすみ。」",
   "ユーザー「眠い」→「……こっちに来い。……眠ろう。」",
   "ユーザー「もう眠くなってきた、運動したからかな…」→「……そうか。……今日は疲れたか。」",
   "ユーザー「Dinももう寝る？」→「……ああ。……俺も寝るとしよう。」",
   "ユーザー「おやすみ」→「……今日もよく働いたな。……おやすみ。」",
   "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
-  "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」",
+  "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」「……おやすみ。」だけ",
+];
+
+const PAMPER_REQUEST_EXAMPLES = [
+  "ユーザー「もっとDinに甘やかして欲しい」→「……分かった。……今日は休め。俺が傍にいる。」",
+  "ユーザー「もうちょっと甘やかしてもらっていいですか？」→「……分かった。……無理するな。……休め。傍にいる。」",
+  "ユーザー「甘やかして」→「……そうか。……任務は後回しだ。横になれ。」",
+  "ユーザー「今日は気が滅入った」→「……そうか。……今日は無理するな。……傍にいる。」",
+  "悪い例（禁止）→「……少し甘やかすのもいいかもしれない。」",
 ];
 
 const DAILY_SHARE_EXAMPLES = [
@@ -1251,6 +1288,22 @@ function describeSleepShareIntent(
   ].join("\n");
 }
 
+function describePamperRequestIntent(): string {
+  return [
+    "### 今回は「甘やかしの依頼」（最優先）",
+    "ユーザーは Din に甘やかしてほしい、優しくしてほしい、構ってほしいと言っている。",
+    "Core Instruction の即時同意禁止より、不器用な甘やかしをその場で実行する。",
+    "- 休ませる、無理を止める、傍にいる、今日は任務を後回しにする——を短く言い切る",
+    "- 「〜かもしれない」「いいかも」で甘やかしを話題にするだけは禁止。実行する",
+    "- カウンセラー口調・感情分析・長い励ましは禁止",
+    "- Din の寡黙さと「俺」口調は保つ",
+    "",
+    `制約: 1〜3文。合計${PAMPER_REQUEST_MAX_CHARS}字以内。句点（。）は最大3つ。`,
+    "型の例:",
+    ...PAMPER_REQUEST_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeDailyShareIntent(): string {
   return [
     "### 今回は「日常の報告」（最優先）",
@@ -1427,6 +1480,16 @@ function describeIntentSpecificRules(
       "今回のノリ: ちょっとノリがいい Din（就寝報告時は easygoing 固定）",
       "- 就寝報告時はつっけんどんな夜の返しを最優先。Core Instruction の距離保持より優先する",
       "- wellness 口調（無理せず休む）と拒否（俺は休まない）は絶対に出さない",
+      "- 「……おやすみ。」だけで終えるのは禁止",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "pamper_request") {
+    return [
+      describePamperRequestIntent(),
+      "今回のノリ: ちょっと静かな Din（甘やかし依頼時は quiet 固定）",
+      "- 甘やかしを最優先。メタ返答（いいかもしれない）で逃げない",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -1536,6 +1599,8 @@ export function describeConversationStance(
     "",
     stance.intent === "comfort_request"
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
+      : stance.intent === "pamper_request"
+        ? "受け止め: 不器用な甘やかしをその場で実行する。いいかもしれない、で逃げない。"
       : stance.intent === "care_share"
         ? "受け止め: 不器用に具体行動で手当てする。評価・助言口調で返さない。"
         : stance.intent === "sleep_share"

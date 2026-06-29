@@ -62,6 +62,13 @@ export function isBedtimeWindow(date = new Date()): boolean {
   return hour >= 21 || hour < 5;
 }
 
+/** クライアントの timeBand を優先し、就寝系 intent を夜間に確実に有効化する */
+export function isSleepTimeContext(context?: DinSessionContext): boolean {
+  if (context?.timeBand === "late_night") return true;
+  if (context?.timeBand === "evening") return isBedtimeWindow();
+  return isBedtimeWindow();
+}
+
 export function getDayType(date = new Date()): DinDayType {
   const day = getJstWeekday(date);
   return day === 0 || day === 6 ? "weekend" : "weekday";
