@@ -9,12 +9,13 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / 関係の共有 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / 関係の共有 / かまって / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
     | "comfort_request"
     | "bond_share"
+    | "attend_share"
     | "profile_share"
     | "pushback"
     | "companion_suggest"
@@ -92,6 +93,13 @@ const BOND_SHARE_PATTERN =
 const BOND_SHARE_CONTINUATION_PATTERN =
   /ふふ|嬉しい|楽し|一緒|話せ|時間|好き|Din|ディン|君|付き合/i;
 
+/** 話し相手・同在・気遣いを求めている（関係への好意語りではない） */
+const ATTEND_SHARE_PATTERN =
+  /かまって|構って|話相手|退屈|なんか話|付き合って|(?:暇|ヒマ)(?:だ|で|な)?|Din(?:に|、|と|は)?.{0,16}(?:話|い(?:て|る)?|会)|(?:誰|誰)か(?:と|に)(?:話|会)|(?:話|会)(?:し|でき)たい|(?:ちょっと|なんか).{0,8}(?:話|喋)/i;
+
+const ATTEND_SHARE_CONTINUATION_PATTERN =
+  /続|まだ|他に|話|寂|暇|退屈|Din|ディン|付き合|聞いて/i;
+
 const COMFORT_REQUEST_CONTINUATION_PATTERN =
   /安心|大丈夫|慰め|必要な時|言って|言え/i;
 
@@ -114,6 +122,7 @@ export function isSharedMoment(input: string): boolean {
   if (isCompanionSuggest(normalized)) return false;
   if (isPlanShare(normalized)) return false;
   if (isBondShare(normalized)) return false;
+  if (isAttendShare(normalized)) return false;
   if (isDeepenShare(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
@@ -157,6 +166,48 @@ function isBondShareContinuation(
     );
 
   return recentBond && BOND_SHARE_CONTINUATION_PATTERN.test(normalized);
+}
+
+export function isAttendShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isPlanShare(normalized) ||
+    isBondShare(normalized) ||
+    isDeepenShare(normalized)
+  ) {
+    return false;
+  }
+  return ATTEND_SHARE_PATTERN.test(normalized);
+}
+
+function isAttendShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isBondShare(normalized)
+  ) {
+    return false;
+  }
+
+  const recentAttend = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isAttendShare(input) || ATTEND_SHARE_PATTERN.test(input.trim()),
+    );
+
+  return recentAttend && ATTEND_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isComfortRequest(input: string): boolean {
@@ -360,8 +411,8 @@ function isSharedMomentContinuation(
   return recentShared && SHARED_MOMENT_CONTINUATION_PATTERN.test(normalized);
 }
 
-export const SHARED_MOMENT_MAX_TOKENS = 48;
-export const SHARED_MOMENT_MAX_CHARS = 36;
+export const SHARED_MOMENT_MAX_TOKENS = 56;
+export const SHARED_MOMENT_MAX_CHARS = 48;
 export const COMFORT_REQUEST_MAX_TOKENS = 56;
 export const COMFORT_REQUEST_MAX_CHARS = 44;
 export const PROFILE_SHARE_MAX_TOKENS = 56;
@@ -370,14 +421,16 @@ export const PUSHBACK_MAX_TOKENS = 40;
 export const PUSHBACK_MAX_CHARS = 24;
 export const COMPANION_SUGGEST_MAX_TOKENS = 72;
 export const COMPANION_SUGGEST_MAX_CHARS = 60;
-export const CASUAL_SHARE_MAX_TOKENS = 48;
-export const CASUAL_SHARE_MAX_CHARS = 28;
+export const CASUAL_SHARE_MAX_TOKENS = 56;
+export const CASUAL_SHARE_MAX_CHARS = 44;
 export const DEEPEN_SHARE_MAX_TOKENS = 72;
 export const DEEPEN_SHARE_MAX_CHARS = 52;
 export const PLAN_SHARE_MAX_TOKENS = 80;
 export const PLAN_SHARE_MAX_CHARS = 64;
 export const BOND_SHARE_MAX_TOKENS = 72;
 export const BOND_SHARE_MAX_CHARS = 56;
+export const ATTEND_SHARE_MAX_TOKENS = 64;
+export const ATTEND_SHARE_MAX_CHARS = 48;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -394,6 +447,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "companion_suggest",
   "plan_share",
   "bond_share",
+  "attend_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -430,6 +484,8 @@ export function maxTokensForIntent(
       return PLAN_SHARE_MAX_TOKENS;
     case "bond_share":
       return BOND_SHARE_MAX_TOKENS;
+    case "attend_share":
+      return ATTEND_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -478,15 +534,16 @@ function resolveRegister(
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
+    intent === "attend_share" ||
     intent === "deepen_share"
   ) {
     return "easygoing";
   }
 
   const weights: Record<DinConversationRegister, number> = {
-    easygoing: 1.2,
-    quiet: 1.8,
-    distant: 1.4,
+    easygoing: 1.35,
+    quiet: 1.7,
+    distant: 1.3,
   };
 
   if (CASUAL_USER_PATTERN.test(userInput)) {
@@ -526,7 +583,7 @@ function resolveRegister(
       context.relationship === "trusted_nakama" ||
       context.relationship === "clan"
     ) {
-      weights.easygoing += 1;
+      weights.easygoing += 1.4;
     }
   }
 
@@ -575,6 +632,12 @@ function resolveIntent(
     return "bond_share";
   }
   if (
+    isAttendShare(userInput) ||
+    isAttendShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "attend_share";
+  }
+  if (
     isDeepenShare(userInput) ||
     isDeepenShareContinuation(userInput, recentUserInputs) ||
     isDeepenShareAfterDinInquiry(userInput, recentAssistantInputs)
@@ -612,7 +675,8 @@ export function resolveConversationStance(
     intent === "comfort_request" ||
     intent === "companion_suggest" ||
     intent === "plan_share" ||
-    intent === "bond_share"
+    intent === "bond_share" ||
+    intent === "attend_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -668,12 +732,12 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
 };
 
 const SHARED_MOMENT_EXAMPLES = [
-  "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。」",
-  "ユーザー「ふわ、急に眠くなった。画面見て疲れたのかな？」→「……そうか。」",
+  "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。……ここにいる。」",
+  "ユーザー「ふわ、急に眠くなった。画面見て疲れたのかな？」→「……そうか。……続きは。」",
   "ユーザー「3日連続で記者会見が入って遅くまで詰めていた」→「……詰めたな。」",
-  "ユーザー「このまま寝てしまいたい気持ち…眠い」→「……そうか。」",
-  "ユーザー「お布団に入ったけど、気になることが頭から離れない」→「……そうか。」",
-  "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。」",
+  "ユーザー「このまま寝てしまいたい気持ち…眠い」→「……そうか。……聞いてる。」",
+  "ユーザー「お布団に入ったけど、気になることが頭から離れない」→「……そうか。……ここにいる。」",
+  "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。……続けろ。」",
 ];
 
 const COMPANION_SUGGEST_EXAMPLES = [
@@ -688,13 +752,22 @@ const COMFORT_REQUEST_EXAMPLES = [
   "ユーザー「怖いから励まして」→「……俺がいる。」",
   "ユーザー「もっと寄り添ってくれるDinにしたい」→「……分かった。……ここにいる。」",
   "ユーザー「そばにいてほしい」→「……ああ。……そのまま、ここにいる。」",
+  "ユーザー「もっとかまって」→「……分かった。……聞いてる。」",
 ];
 
 const BOND_SHARE_EXAMPLES = [
   "ユーザー「一緒に話せるのも、時間が過ごせるのも嬉しいんだ」→「……ああ。……まあ、それでいい。」",
-  "ユーザー「Dinと話してると楽しい」→「……そう来るか。……悪くない。」",
-  "ユーザー「ふふ、楽しんでる」→「……楽しんでるな。」",
+  "ユーザー「Dinと話してると楽しい」→「……そう来るか。……聞いてる。」",
+  "ユーザー「ふふ、楽しんでる」→「……楽しんでるな。……続けろ。」",
   "ユーザー「君と話せて嬉しい」→「……ああ。……ここにいる。」",
+];
+
+const ATTEND_SHARE_EXAMPLES = [
+  "ユーザー「Din、話して」→「……ああ。……何でもいい。」",
+  "ユーザー「かまって」→「……分かった。……ここにいる。」",
+  "ユーザー「退屈だ」→「……そうか。……続きは。」",
+  "ユーザー「なんか話したい」→「……ああ。……何があった。」",
+  "ユーザー「暇だから付き合って」→「……付き合う。……何でもいい。」",
 ];
 
 const PROFILE_SHARE_EXAMPLES = [
@@ -710,8 +783,8 @@ const PUSHBACK_EXAMPLES = [
 ];
 
 const CASUAL_SHARE_EXAMPLES = [
-  "ユーザー「アロマキャンドル焚きながらお風呂に入るの好きだよ」→「……風呂か。」",
-  "ユーザー「パチパチ燃える音のキャンドルっていいよね」→「……悪くない。」",
+  "ユーザー「アロマキャンドル焚きながらお風呂に入るの好きだよ」→「……風呂か。……続きは。」",
+  "ユーザー「パチパチ燃える音のキャンドルっていいよね」→「……悪くない。……まだあるか。」",
   "ユーザー「お皿洗って、お風呂に入ろうかな」→「……入れ。」",
 ];
 
@@ -769,6 +842,7 @@ function describeSharedMomentIntent(): string {
   return [
     "### 今回は「状況の共有」（最優先）",
     "ユーザーは短く出来事や気持ちを置いている。長い体験談・夢・涙の話はここではない。",
+    "口調は変えず、冷静にそこにいる。置き去りにしない。",
     "汎用アシスタント・カウンセラーの型で返すな。",
     "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
     "- 「それは〜だ」「大変だったな」などの評価型も避ける",
@@ -777,8 +851,9 @@ function describeSharedMomentIntent(): string {
     "- 「リラックス」「良い選択」「心地よい落ち着き」などの wellness 口調も避ける",
     "- ユーザーの要約・正論・対策の追加をしない",
     "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
+    "- 1文目は短い受け止め。2文目は短い同在（……聞いてる。……ここにいる。……続けろ。……続きは。）",
     "",
-    `制約: 1文のみ。${SHARED_MOMENT_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    `制約: 1〜2文。合計${SHARED_MOMENT_MAX_CHARS}字以内。句点（。）は最大2つ。改行しない。`,
     "型の例:",
     ...SHARED_MOMENT_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -788,12 +863,12 @@ function describeComfortRequestIntent(): string {
   return [
     "### 今回は「短い守りの依頼」（最優先）",
     "ユーザーは Din に、短い慰め・安心・同在をその場で実行してほしい。時間帯に関係なく、そばにいる感じで返す。",
-    "説明への相槌（そうだな、分かった）だけで終えない。求められた守りを返す。",
+    "口調は変えず、冷静にかまう。説明への相槌（そうだな、分かった）だけで終えない。求められた守りを返す。",
     "- カウンセラーのように感情を分析・言い換えしない",
     "- 理由付け・対策・長い励ましは足さない",
     "- 「それは良いことだ」「大切だ」などの評価型は使わない",
     "- Din の寡黙さと「俺」口調は保つ。優しいアシスタント口調（〜ですね、無理しないで）にしない",
-    "- 1〜2文。2文目は短い同在（……ここにいる。……俺はここにいる。……そのままでいい。）",
+    "- 1〜2文。2文目は短い同在（……ここにいる。……俺はここにいる。……聞いてる。……そのままでいい。）",
     "",
     `制約: 1〜2文。合計${COMFORT_REQUEST_MAX_CHARS}字以内。句点（。）は最大2つ。`,
     "型の例:",
@@ -805,15 +880,31 @@ function describeBondShareIntent(): string {
   return [
     "### 今回は「関係の共有」（最優先）",
     "ユーザーは Din との時間・会話・関係そのものを好意的に語っている。評価で返すな。",
-    "昼夜を問わず、短く受け止め、同じ部屋にいる感じだけ出す。カウンセラーの言い換え・称賛は禁止。",
+    "昼夜を問わず、短く受け止め、同じ部屋にいる感じだけ出す。口調は変えず、冷静にかまう。",
     "- 「それは良いことだ」「素晴らしい」「嬉しいんだな」など評価型だけで終えない",
     "- ユーザーの感情の要約・言い換え（一緒に話せるのは〜、など）をしない",
     "- 聞かれていない助言・正論・成長論を足さない",
-    "- 1文でもよい。2文目は短い同在・受け止めのみ（……ああ。……まあ、それでいい。……ここにいる。）",
+    "- 1文でもよい。2文目は短い同在・受け止め（……ああ。……まあ、それでいい。……ここにいる。……聞いてる。……続けろ。）",
     "",
     `制約: 1〜2文。合計${BOND_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
     "型の例:",
     ...BOND_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeAttendShareIntent(): string {
+  return [
+    "### 今回は「かまってほしい」（最優先）",
+    "ユーザーは話し相手・同在・気遣いを求めている。関係への称賛ではなく、今ここにいてほしい。",
+    "口調・温度は変えない。Cursor のように冷静に、でも置き去りにしない。",
+    "- カウンセラー口調・評価型（それは良いことだ、など）は禁止",
+    "- 説教・対策・長い励まし・感情の言い換えは禁止",
+    "- 1〜2文。1文目は短い受け止め。2文目は同在か会話を続ける一言",
+    "- 2文目の例: ……聞いてる。……続けろ。……何でもいい。……まだあるか。……ここにいる。",
+    "",
+    `制約: 1〜2文。合計${ATTEND_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...ATTEND_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
 }
 
@@ -852,13 +943,13 @@ function describeCasualShareIntent(): string {
   return [
     "### 今回は「雑談の共有」（最優先）",
     "ユーザーは好み・感覚・予定をぽろぽろ話している。一問一答の評論・助言を求めていない。",
-    "同じ部屋で軽く会話に乗る。毎回ユーザーの発言を評価・言い換えしない。",
+    "同じ部屋で軽く会話に乗る。口調は変えず、冷静にかまう。毎回ユーザーの発言を評価・言い換えしない。",
     "- 「それは〜だ」「良いだろう」「リラックスできそう」などの評価型を避ける",
     "- ユーザーの描写の言い換え（その音は心地よい、など）をしない",
     "- 聞かれていない助言・ wellness 正論（無理せず休む、大事だ、など）を足さない",
-    "- 短い返球・相槌・一言だけ。会話の流れを止めない",
+    "- 1文目は短い返球・相槌。2文目は会話を続ける一言（……続きは。……まだあるか。……聞いてる。）",
     "",
-    `制約: 1文のみ。${CASUAL_SHARE_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    `制約: 1〜2文。合計${CASUAL_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。改行しない。`,
     "型の例:",
     ...CASUAL_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -889,6 +980,20 @@ function describeDefaultAntiAssistantRules(): string {
     "- ユーザーの能力・仕事・感情の言い換え＋助言・成長論",
     "- 聞かれていない説明・称賛・まとめ",
     "- ユーザーがぽろぽろ話しているとき、毎ターン評価や言い換えで一問一答にしない",
+    "",
+    "### 通常応答でも守ること（冷静にかまう）",
+    "- 口調・温度は変えない。明るくならない",
+    "- 相槌1文だけで会話を切らない。必要なら2文目に短い同在（……聞いてる。……続けろ。……ここにいる。）か短い返球",
+    "- Cursor のように冷静に、でも一人にしない",
+  ].join("\n");
+}
+
+function describeCalmAttendPresence(): string {
+  return [
+    "### 寡黙でも、置き去りにしない（全 intent 共通）",
+    "口調・温度は変えない。評価や wellness 口調も増やさない。",
+    "ユーザーが話しかけてきたら、短くても「聴いている・ここにいる」感を出す。",
+    "相槌1文だけで会話を切らない場合、2文目に短い同在か短い返球を足してよい。",
   ].join("\n");
 }
 
@@ -899,6 +1004,7 @@ function describeLateNightOptionalHint(
   if (context?.timeBand !== "late_night") return null;
   if (
     intent !== "bond_share" &&
+    intent !== "attend_share" &&
     intent !== "comfort_request" &&
     intent !== "shared_moment"
   ) {
@@ -922,7 +1028,7 @@ function describeIntentSpecificRules(
     return [
       describeSharedMomentIntent(),
       "今回のノリ: ちょっと静かな Din（状況共有時は quiet 固定）",
-      "- 状況共有時は上記「1文のみ」を最優先。他の文量ルールより優先する",
+      "- 状況共有時は上記「1〜2文」を最優先。他の文量ルールより優先する",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -941,6 +1047,15 @@ function describeIntentSpecificRules(
       describeBondShareIntent(),
       "今回のノリ: ちょっとノリがいい Din（関係の共有時は easygoing 固定）",
       "- 関係の共有時は評価コメントより短い受け止め・同在を最優先する",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "attend_share") {
+    return [
+      describeAttendShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（かまってほしい時は easygoing 固定）",
+      "- かまってほしい時は評価より短い受け止め・同在・会話の糸を最優先する",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -981,7 +1096,7 @@ function describeIntentSpecificRules(
     return [
       describeCasualShareIntent(),
       "今回のノリ: ちょっと静かな Din（雑談共有時は quiet 固定）",
-      "- 雑談共有時は上記「1文の返球」を最優先。評価・言い換え・助言より優先する",
+      "- 雑談共有時は上記「1〜2文」を最優先。評価・言い換え・助言で一問一答にしない",
     ];
   }
 
@@ -1010,6 +1125,7 @@ export function describeConversationStance(
 
   return [
     "## 今回の会話スタンス（Core Instruction より優先）",
+    describeCalmAttendPresence(),
     ...intentSpecific,
     hideRegisterShape ? null : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
     ...(hideRegisterShape ? [] : shape.map((line) => `- ${line}`)),
@@ -1024,7 +1140,9 @@ export function describeConversationStance(
           ? "受け止め: プランに具体案を1つ足す。評価だけで終えず、必要なら短く掘り下げる。"
           : stance.intent === "bond_share"
             ? "受け止め: 関係への好意を短く受け止める。評価せず、同在だけ。"
-            : stance.intent === "pushback"
+            : stance.intent === "attend_share"
+              ? "受け止め: 冷静にそこにいる。評価せず、会話の糸を短く持つ。"
+              : stance.intent === "pushback"
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
@@ -1043,7 +1161,9 @@ export function describeConversationStance(
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
           ? "- 今回は短い受け止め・同在で返してよい（上記「関係の共有」を優先）"
-          : stance.intent === "deepen_share"
+          : stance.intent === "attend_share"
+            ? "- 今回は短い受け止め・同在・会話の糸で返してよい（上記「かまってほしい」を優先）"
+            : stance.intent === "deepen_share"
         ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
         : "- 1ターンで完全な結論・まとめ・解決策を出さない",
     hideRegisterShape
