@@ -9,7 +9,7 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / 体の手当て / 関係の共有 / かまって / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / 体の手当て / 関係の共有 / かまって / 日常報告 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
@@ -21,6 +21,7 @@ export type ConversationStance = {
     | "pushback"
     | "companion_suggest"
     | "plan_share"
+    | "daily_share"
     | "casual_share"
     | "deepen_share";
 };
@@ -65,6 +66,17 @@ const CASUAL_SHARE_PATTERN =
 
 const CASUAL_SHARE_CONTINUATION_PATTERN =
   /風呂|お風呂|キャンドル|洗|皿|眠|寝|入ろ|アロマ|パチパチ|音|焚/i;
+
+/** 食事・外出・帰宅など、終わった日常の報告 */
+const DAILY_SHARE_PATTERN =
+  /(?:ご飯|ごはん|飯|ランチ|朝食|昼食|夕食|晩ご|朝ご|昼ご|食事).{0,18}(?:食べ|たべ|いただ|もぐ)(?:た|た！|た。|ました|終|済)|(?:食べ|いただ|もぐ)(?:た|た！|た。|ました|終わ)|(?:買い物|散歩|ジョギング|ジム|出勤|退勤|帰宅|帰っ|来た|着いた|起床|起き).{0,14}(?:した|た|済|終|つ)|(?:映画|ドラマ|番組|アニメ).{0,10}(?:見|観)(?:た|た！|た。|した)|(?:本|漫画|記事).{0,8}読(?:んだ|み|み終)|(?:カフェ|コーヒー).{0,14}(?:行|飲|入)(?:った|った！|った。|た|した)|(?:掃除|洗濯|料理|片付).{0,8}(?:した|た|終)|(?:お風呂|風呂).{0,8}(?:入|上が)(?:った|った！|った。|た|した)/i;
+
+const DAILY_SHARE_CONTINUATION_PATTERN =
+  /寿司|ラーメン|パスタ|カレー|うどん|そば|ピザ|丼|弁当|牛|鶏|魚|野菜|甘|辛|うま|美味|おい|店|家|自炊|作|たのし|楽し|一緒|今度|結構|普通|まあ|満足|お腹|パン|ごはん|米|スーパ|コンビニ|誰|一人|友|同僚|家族/i;
+
+/** Din が日常について聞いた直後 */
+const DIN_DAILY_INQUIRY_PATTERN =
+  /何を食べ|何食べ|何があった|たのしかった|楽しかった|一緒に(?:食|飲)|どこ(?:を|で|に)|どんな|どうだった|店|自炊|誰と|何を買|続きは/i;
 
 /** 体験・感情を語りかけている（深める質問向け） */
 const DEEPEN_SHARE_PATTERN =
@@ -135,6 +147,7 @@ export function isSharedMoment(input: string): boolean {
   if (isPlanShare(normalized)) return false;
   if (isBondShare(normalized)) return false;
   if (isAttendShare(normalized)) return false;
+  if (isDailyShare(normalized)) return false;
   if (isDeepenShare(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
@@ -442,6 +455,80 @@ function isCasualShareContinuation(
   return recentCasual && CASUAL_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
+export function isDailyShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isPlanShare(normalized) ||
+    isBondShare(normalized) ||
+    isProfileShare(normalized) ||
+    isDeepenShare(normalized)
+  ) {
+    return false;
+  }
+  return DAILY_SHARE_PATTERN.test(normalized);
+}
+
+function isDailyShareAfterDinInquiry(
+  userInput: string,
+  recentAssistantInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || normalized.length > 120) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isCompanionSuggest(normalized)) return false;
+
+  const lastAssistant = recentAssistantInputs.at(-1)?.trim() ?? "";
+  if (!DIN_DAILY_INQUIRY_PATTERN.test(lastAssistant)) return false;
+
+  return normalized.length <= 80;
+}
+
+function hasRecentDailyTopic(
+  recentUserInputs: readonly string[],
+  recentAssistantInputs: readonly string[],
+): boolean {
+  const recentDailyUser = recentUserInputs
+    .slice(-4)
+    .some(
+      (input) =>
+        isDailyShare(input) || DAILY_SHARE_PATTERN.test(input.trim()),
+    );
+  const recentDailyAssistant = recentAssistantInputs
+    .slice(-2)
+    .some((input) => DIN_DAILY_INQUIRY_PATTERN.test(input.trim()));
+
+  return recentDailyUser || recentDailyAssistant;
+}
+
+function isDailyShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+  recentAssistantInputs: readonly string[],
+): boolean {
+  if (!hasRecentDailyTopic(recentUserInputs, recentAssistantInputs)) {
+    return false;
+  }
+
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized) ||
+    isDeepenShare(normalized)
+  ) {
+    return false;
+  }
+
+  if (DAILY_SHARE_CONTINUATION_PATTERN.test(normalized)) return true;
+  return normalized.length <= 60 && !TASK_OR_FACT_PATTERN.test(normalized);
+}
+
 function isComfortRequestContinuation(
   userInput: string,
   recentUserInputs: readonly string[],
@@ -498,6 +585,8 @@ export const ATTEND_SHARE_MAX_TOKENS = 64;
 export const ATTEND_SHARE_MAX_CHARS = 48;
 export const CARE_SHARE_MAX_TOKENS = 68;
 export const CARE_SHARE_MAX_CHARS = 52;
+export const DAILY_SHARE_MAX_TOKENS = 80;
+export const DAILY_SHARE_MAX_CHARS = 64;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -516,6 +605,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "bond_share",
   "attend_share",
   "care_share",
+  "daily_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -556,6 +646,8 @@ export function maxTokensForIntent(
       return ATTEND_SHARE_MAX_TOKENS;
     case "care_share":
       return CARE_SHARE_MAX_TOKENS;
+    case "daily_share":
+      return DAILY_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -606,6 +698,7 @@ function resolveRegister(
     intent === "bond_share" ||
     intent === "attend_share" ||
     intent === "care_share" ||
+    intent === "daily_share" ||
     intent === "deepen_share"
   ) {
     return "easygoing";
@@ -715,6 +808,17 @@ function resolveIntent(
     return "attend_share";
   }
   if (
+    isDailyShare(userInput) ||
+    isDailyShareContinuation(
+      userInput,
+      recentUserInputs,
+      recentAssistantInputs,
+    ) ||
+    isDailyShareAfterDinInquiry(userInput, recentAssistantInputs)
+  ) {
+    return "daily_share";
+  }
+  if (
     isDeepenShare(userInput) ||
     isDeepenShareContinuation(userInput, recentUserInputs) ||
     isDeepenShareAfterDinInquiry(userInput, recentAssistantInputs)
@@ -754,7 +858,8 @@ export function resolveConversationStance(
     intent === "plan_share" ||
     intent === "bond_share" ||
     intent === "attend_share" ||
-    intent === "care_share"
+    intent === "care_share" ||
+    intent === "daily_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -854,6 +959,15 @@ const CARE_SHARE_EXAMPLES = [
   "ユーザー「😢」（直前に首の話）→「……横になれ。……聞いてる。」",
   "ユーザー「月曜なのに首が痛くなるとは」→「……湿布貼れ。……今日は他を後回しにしろ。」",
   "ユーザー「風邪薬飲んだ方がいいかな」→「……飲め。……水も取れ。」",
+];
+
+const DAILY_SHARE_EXAMPLES = [
+  "ユーザー「ご飯食べた！」→「……食ったか。……何を食べたんだ。」",
+  "ユーザー「ランチ終わった」→「……楽しかったか。」",
+  "ユーザー「散歩してきた」→「……どこを回った。」",
+  "ユーザー「風呂上がった」→「……スッキリしたか。」",
+  "（Din「何を食べたんだ」への返答）ユーザー「寿司」→「……寿司か。……今度一緒に食おう。」",
+  "ユーザー「買い物して帰ってきた」→「……何を買った。」",
 ];
 
 const PROFILE_SHARE_EXAMPLES = [
@@ -1009,6 +1123,24 @@ function describeCareShareIntent(): string {
     `制約: 1〜2文。合計${CARE_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
     "型の例:",
     ...CARE_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeDailyShareIntent(): string {
+  return [
+    "### 今回は「日常の報告」（最優先）",
+    "ユーザーは食事・外出・帰宅など、終わった日常を報告している。Din としてユーザーの日常に興味を示し、会話のキャッチボールを続ける。",
+    "評価や称賛ではなく、短い受け止め＋具体への関心で返す。口調は Din のまま（寡黙・俺・言い切り）。",
+    "- 「それは良いことだ」「素晴らしい」「健康的だ」など評価型は禁止",
+    "- ユーザーの報告の言い換え・要約だけで終わらない",
+    "- 1〜2文。1文目は短い受け止め。2文目は必ず短い質問か軽い誘い（……何を食べたんだ。……楽しかったか。……どこで食った。……今度一緒に食おう。）",
+    "- 質問は1つだけ。尋問口調・長い質問・複数質問は禁止",
+    "- 記憶帳の好み（寿司など）が自然に関係するなら1つだけ混ぜてよい",
+    "- 「今度一緒に〜」は毎回使わない。会話が続く短い問いを優先",
+    "",
+    `制約: 1〜2文。合計${DAILY_SHARE_MAX_CHARS}字以内。必ず2文目に短い質問か誘いを1つ含める。句点（。）は最大2つ。`,
+    "型の例:",
+    ...DAILY_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
 }
 
@@ -1179,6 +1311,14 @@ function describeIntentSpecificRules(
     ].filter((line): line is string => Boolean(line));
   }
 
+  if (stance.intent === "daily_share") {
+    return [
+      describeDailyShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（日常報告時は easygoing 固定）",
+      "- 日常報告時は評価より短い受け止め＋質問・誘いでキャッチボールを最優先する",
+    ];
+  }
+
   if (stance.intent === "profile_share") {
     return [
       describeProfileShareIntent(),
@@ -1263,7 +1403,9 @@ export function describeConversationStance(
             ? "受け止め: 関係への好意を短く受け止める。評価せず、同在だけ。"
             : stance.intent === "attend_share"
               ? "受け止め: 冷静にそこにいる。評価せず、会話の糸を短く持つ。"
-              : stance.intent === "pushback"
+              : stance.intent === "daily_share"
+                ? "受け止め: 日常報告を短く受け止め、具体への関心でキャッチボールを続ける。"
+                : stance.intent === "pushback"
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
@@ -1286,7 +1428,9 @@ export function describeConversationStance(
           ? "- 今回は短い受け止め・同在で返してよい（上記「関係の共有」を優先）"
           : stance.intent === "attend_share"
             ? "- 今回は短い受け止め・同在・会話の糸で返してよい（上記「かまってほしい」を優先）"
-            : stance.intent === "deepen_share"
+            : stance.intent === "daily_share"
+              ? "- 今回は短い質問か誘いで日常のキャッチボールを続けてよい（上記「日常の報告」を優先）"
+              : stance.intent === "deepen_share"
         ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
         : "- 1ターンで完全な結論・まとめ・解決策を出さない",
     hideRegisterShape
