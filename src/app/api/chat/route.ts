@@ -146,7 +146,9 @@ export async function POST(request: Request) {
         ? 0.75
         : conversationStance.intent === "comfort_request"
           ? 0.62
-          : conversationStance.intent === "companion_suggest"
+          : conversationStance.intent === "care_share"
+            ? 0.67
+            : conversationStance.intent === "companion_suggest"
             ? 0.68
             : conversationStance.intent === "plan_share"
               ? 0.68

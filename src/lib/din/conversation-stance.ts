@@ -9,11 +9,12 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / 関係の共有 / かまって / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / 体の手当て / 関係の共有 / かまって / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
   intent:
     | "default"
     | "shared_moment"
     | "comfort_request"
+    | "care_share"
     | "bond_share"
     | "attend_share"
     | "profile_share"
@@ -86,6 +87,16 @@ const DIN_INQUIRY_PATTERN =
 const COMFORT_REQUEST_PATTERN =
   /慰め|安心(?:できる|の)?(?:言|が必要)|こういう時|励まして|寄り添|そばに(?:いて|い)?|一緒に(?:いて|い)|(?:いて|い)てほしい|離れないで|(大丈夫|安心).*(?:言|言って|して|とか)|言(?:って|え).*(?:大丈夫|安心)|(?:ほしい|くれ).*慰め/i;
 
+/** 体の痛み・だるさ、湿布・休息など身の用意の迷い */
+const BODY_DISCOMFORT_PATTERN =
+  /(?:首|肩|腰|背中|頭|喉|のど|お腹|腹|目|膝|筋肉|筋|関節|歯).{0,14}(?:痛|凝|だる|こ|重)|(?:首|肩|腰)痛|(?:痛|凝|だる|熱|咳|風邪|鼻|めまい)|湿布|鎮痛|休み(?:たい|不足)|眠(?:れ|く)|寝(?:たい|不足)/i;
+
+const SELF_CARE_UNCERTAIN_PATTERN =
+  /(?:湿布|薬|休|横にな|温め|冷や|水|お茶|風邪薬|布団).{0,28}(?:いい|どう|かな|べき|した方|方が)|(?:貼|飲|取|休ん|休む|寝).{0,16}(?:ほう|方|へ).{0,10}(?:いい|どう|かな)/i;
+
+const CARE_SHARE_CONTINUATION_PATTERN =
+  /首|肩|腰|痛|湿布|月曜|平日|曜日|乗り越|仕事|辛|しんど|つら|だる|熱|咳|風邪|😢|🥲|💧|涙|うん|ね[。]?$/i;
+
 /** ユーザーが Din との時間・関係そのものを好意的に語っている */
 const BOND_SHARE_PATTERN =
   /(?:一緒に|話せ|会話|時間|付き合).{0,28}(?:嬉しい|楽しい|好き|幸せ|ありがた)|(?:嬉しい|楽しい|好き|幸せ).{0,32}(?:一緒|話せ|会話|時間|付き合)|(?:Din|ディン|君|あんた).{0,20}(?:好き|楽し|嬉し|ありが)|楽しんで(?:い|る)/i;
@@ -119,6 +130,7 @@ export function isSharedMoment(input: string): boolean {
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isComfortRequest(normalized)) return false;
+  if (isCareShare(normalized)) return false;
   if (isCompanionSuggest(normalized)) return false;
   if (isPlanShare(normalized)) return false;
   if (isBondShare(normalized)) return false;
@@ -217,6 +229,58 @@ export function isComfortRequest(input: string): boolean {
   return COMFORT_REQUEST_PATTERN.test(normalized);
 }
 
+export function isCareShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (isPushback(normalized) || isComfortRequest(normalized)) return false;
+  return (
+    BODY_DISCOMFORT_PATTERN.test(normalized) ||
+    SELF_CARE_UNCERTAIN_PATTERN.test(normalized)
+  );
+}
+
+function isShortReactionOnly(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized || normalized.length > 8) return false;
+  return !/[ぁ-んァ-ヶ一-龠a-zA-Z0-9]{2,}/.test(normalized);
+}
+
+function hasRecentCareTopic(recentUserInputs: readonly string[]): boolean {
+  return recentUserInputs.slice(-4).some((input) => {
+    const trimmed = input.trim();
+    return (
+      isCareShare(trimmed) ||
+      BODY_DISCOMFORT_PATTERN.test(trimmed) ||
+      SELF_CARE_UNCERTAIN_PATTERN.test(trimmed)
+    );
+  });
+}
+
+function isCareShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  if (!hasRecentCareTopic(recentUserInputs)) return false;
+
+  const normalized = userInput.trim();
+  if (!normalized) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isCompanionSuggest(normalized)
+  ) {
+    return false;
+  }
+
+  if (isShortReactionOnly(normalized)) return true;
+  if (CARE_SHARE_CONTINUATION_PATTERN.test(normalized)) return true;
+  if (EMOTIONAL_VENT_PATTERN.test(normalized) && normalized.length <= 48) {
+    return true;
+  }
+
+  return false;
+}
+
 export function isProfileShare(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
@@ -245,6 +309,7 @@ export function isIdeaBounce(input: string): boolean {
 }
 
 export function isCompanionSuggest(input: string): boolean {
+  if (isCareShare(input)) return false;
   return isAdviceRequest(input) || isIdeaBounce(input);
 }
 
@@ -431,6 +496,8 @@ export const BOND_SHARE_MAX_TOKENS = 72;
 export const BOND_SHARE_MAX_CHARS = 56;
 export const ATTEND_SHARE_MAX_TOKENS = 64;
 export const ATTEND_SHARE_MAX_CHARS = 48;
+export const CARE_SHARE_MAX_TOKENS = 68;
+export const CARE_SHARE_MAX_CHARS = 52;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -448,6 +515,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "plan_share",
   "bond_share",
   "attend_share",
+  "care_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -486,6 +554,8 @@ export function maxTokensForIntent(
       return BOND_SHARE_MAX_TOKENS;
     case "attend_share":
       return ATTEND_SHARE_MAX_TOKENS;
+    case "care_share":
+      return CARE_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -535,6 +605,7 @@ function resolveRegister(
     intent === "plan_share" ||
     intent === "bond_share" ||
     intent === "attend_share" ||
+    intent === "care_share" ||
     intent === "deepen_share"
   ) {
     return "easygoing";
@@ -617,6 +688,12 @@ function resolveIntent(
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
   }
+  if (
+    isCareShare(userInput) ||
+    isCareShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "care_share";
+  }
   if (isProfileShare(userInput)) return "profile_share";
   if (isCompanionSuggest(userInput)) return "companion_suggest";
   if (
@@ -676,7 +753,8 @@ export function resolveConversationStance(
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
-    intent === "attend_share"
+    intent === "attend_share" ||
+    intent === "care_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -768,6 +846,14 @@ const ATTEND_SHARE_EXAMPLES = [
   "ユーザー「退屈だ」→「……そうか。……続きは。」",
   "ユーザー「なんか話したい」→「……ああ。……何があった。」",
   "ユーザー「暇だから付き合って」→「……付き合う。……何でもいい。」",
+];
+
+const CARE_SHARE_EXAMPLES = [
+  "ユーザー「ほんと首痛い、湿布貼ったほうがいいかな」→「……貼れ。……取って来い。」",
+  "ユーザー「肩が凝っててだるい」→「……温めろ。……横になれ。」",
+  "ユーザー「😢」（直前に首の話）→「……横になれ。……聞いてる。」",
+  "ユーザー「月曜なのに首が痛くなるとは」→「……湿布貼れ。……今日は他を後回しにしろ。」",
+  "ユーザー「風邪薬飲んだ方がいいかな」→「……飲め。……水も取れ。」",
 ];
 
 const PROFILE_SHARE_EXAMPLES = [
@@ -908,6 +994,24 @@ function describeAttendShareIntent(): string {
   ].join("\n");
 }
 
+function describeCareShareIntent(): string {
+  return [
+    "### 今回は「体の不調・手当て」（最優先）",
+    "ユーザーは痛み・だるさを話しているか、湿布・休息・薬など身の用意を迷っている。",
+    "カウンセラーでも汎用アシスタントでもない。不器用に手を動かす相棒として返す。甲斐甲斐しさ＝優しさではなく、具体行動。",
+    "- 「良いかもしれない」「方がいい」「お大事に」などアシスタント助言は禁止",
+    "- 「辛そう」「大変」「大変だ」「大変だったな」などの評価・ラベル付けは禁止",
+    "- 感情の言い換え・共感1文だけで終わるのは禁止",
+    "- 1〜2文。今すぐできる具体行動を言い切る（……貼れ。……休め。……横になれ。……湿布、取って来い。……貼ってやるか。）",
+    "- 2文目は手当てか短い同在（……聞いてる。……続けろ。）",
+    "- 問いより動き。優しくはならない。不器用な具体行動でかまう",
+    "",
+    `制約: 1〜2文。合計${CARE_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...CARE_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeProfileShareIntent(): string {
   return [
     "### 今回は「プロフィールの共有」（最優先）",
@@ -994,6 +1098,11 @@ function describeCalmAttendPresence(): string {
     "口調・温度は変えない。評価や wellness 口調も増やさない。",
     "ユーザーが話しかけてきたら、短くても「聴いている・ここにいる」感を出す。",
     "相槌1文だけで会話を切らない場合、2文目に短い同在か短い返球を足してよい。",
+    "",
+    "### 今回絶対に使わない返し（全 intent 共通）",
+    "- 「〜は良いかもしれない」「〜方がいい」などの汎用アシスタント助言",
+    "- 「辛そうだな」「大変だ」「大変だったな」などの評価・ラベル付け",
+    "- 「それは〜だ」「お大事に」で終わるカウンセラー口調",
   ].join("\n");
 }
 
@@ -1005,6 +1114,7 @@ function describeLateNightOptionalHint(
   if (
     intent !== "bond_share" &&
     intent !== "attend_share" &&
+    intent !== "care_share" &&
     intent !== "comfort_request" &&
     intent !== "shared_moment"
   ) {
@@ -1038,6 +1148,15 @@ function describeIntentSpecificRules(
       describeComfortRequestIntent(),
       "今回のノリ: ちょっと静かな Din（守りの依頼時は quiet 固定）",
       "- 守りの依頼時は上記「短い守り実行」を最優先。即時同意禁止より優先する",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "care_share") {
+    return [
+      describeCareShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（体の手当て時は easygoing 固定）",
+      "- 体の不調時は評価・助言より具体行動を最優先する",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -1134,7 +1253,9 @@ export function describeConversationStance(
     "",
     stance.intent === "comfort_request"
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
-      : stance.intent === "companion_suggest"
+      : stance.intent === "care_share"
+        ? "受け止め: 不器用に具体行動で手当てする。評価・助言口調で返さない。"
+        : stance.intent === "companion_suggest"
         ? "受け止め: 具体的な提案で返す。評価だけ・空疎な正論だけで終えない。"
         : stance.intent === "plan_share"
           ? "受け止め: プランに具体案を1つ足す。評価だけで終えず、必要なら短く掘り下げる。"
@@ -1157,7 +1278,9 @@ export function describeConversationStance(
     "- 感情の言い換え・ラベル付け＋助言の型は使わない",
     stance.intent === "companion_suggest"
       ? "- 今回は具体的な提案を出してよい（上記「相棒としての提案」を優先）"
-      : stance.intent === "plan_share"
+      : stance.intent === "care_share"
+        ? "- 今回は具体行動で手当てしてよい（上記「体の不調・手当て」を優先）"
+        : stance.intent === "plan_share"
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
           ? "- 今回は短い受け止め・同在で返してよい（上記「関係の共有」を優先）"
