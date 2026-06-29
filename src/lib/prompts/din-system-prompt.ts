@@ -376,6 +376,7 @@ export function buildDinSystemPrompt(
     followUpTopic?: string;
     proactiveOpener?: ProactiveOpener;
     conversationStance?: ConversationStance;
+    userInput?: string;
   },
 ): string {
   if (!context && !memoryBook) {
@@ -392,6 +393,7 @@ export function buildDinSystemPrompt(
   const followUpTopic = options?.followUpTopic;
   const proactiveOpener = options?.proactiveOpener;
   const conversationStance = options?.conversationStance;
+  const userInput = options?.userInput;
 
   const greetingInstruction = context?.isGreeting
     ? proactiveOpener
@@ -413,7 +415,7 @@ export function buildDinSystemPrompt(
 
   const stanceSection =
     conversationStance && !context?.isGreeting
-      ? `\n${describeConversationStance(conversationStance, context)}\n`
+      ? `\n${describeConversationStance(conversationStance, context, userInput)}\n`
       : "";
 
   return `${DIN_CORE_PROMPT}${memoryBookSection}${sessionSection}${greetingInstruction}${stanceSection}`;

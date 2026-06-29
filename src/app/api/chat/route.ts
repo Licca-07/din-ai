@@ -138,6 +138,7 @@ export async function POST(request: Request) {
             followUpTopic,
             proactiveOpener,
             conversationStance,
+            userInput: latestUserInput,
           }),
         },
         ...completionMessages,
@@ -149,7 +150,7 @@ export async function POST(request: Request) {
           : conversationStance.intent === "care_share"
             ? 0.67
             : conversationStance.intent === "sleep_share"
-              ? 0.66
+              ? 0.61
               : conversationStance.intent === "daily_share"
               ? 0.69
               : conversationStance.intent === "companion_suggest"

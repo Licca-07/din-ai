@@ -116,10 +116,13 @@ const SLEEP_INSOMNIA_PATTERN =
   /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
 
 const SLEEP_SHARE_PATTERN =
-  /(?:寝る(?:ね|よ|わ|かな)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く)(?:な|ね|よ|。|！|$)|^眠(?:い|く)[！!。]?$/i;
+  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く)(?:な|ね|よ|って|気|)|眠くなって|うとうと|^眠(?:い|く)[！!。]?$/i;
+
+const SLEEP_PARTNER_ASK_PATTERN =
+  /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠)|(?:一緒|一緒に).{0,8}(?:寝|眠)/i;
 
 const SLEEP_SHARE_CONTINUATION_PATTERN =
-  /うん|少し|結構|まあ|今日|疲|仕事|取材|忙|眠|寝|おやすみ/i;
+  /うん|少し|結構|まあ|今日|疲|仕事|取材|忙|運動|眠|寝|おやすみ|Din|ディン|一緒/i;
 
 /** ユーザーが Din との時間・関係そのものを好意的に語っている */
 const BOND_SHARE_PATTERN =
@@ -323,6 +326,13 @@ export function isSleepShare(input: string): boolean {
   return SLEEP_SHARE_PATTERN.test(normalized);
 }
 
+export function isSleepPartnerAsk(input: string): boolean {
+  if (!isBedtimeWindow()) return false;
+  const normalized = input.trim();
+  if (!normalized) return false;
+  return SLEEP_PARTNER_ASK_PATTERN.test(normalized);
+}
+
 function isSleepShareContinuation(
   userInput: string,
   recentUserInputs: readonly string[],
@@ -341,9 +351,15 @@ function isSleepShareContinuation(
   }
 
   const recentSleep = recentUserInputs
-    .slice(-3, -1)
-    .some((input) => isSleepShare(input));
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isSleepShare(input) ||
+        SLEEP_SHARE_PATTERN.test(input.trim()) ||
+        SLEEP_PARTNER_ASK_PATTERN.test(input.trim()),
+    );
 
+  if (isSleepPartnerAsk(normalized)) return true;
   return recentSleep && SLEEP_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
@@ -1031,8 +1047,11 @@ const SLEEP_SHARE_EXAMPLES = [
   "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
   "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
   "ユーザー「眠い」→「……こっちに来い。……眠ろう。」",
+  "ユーザー「もう眠くなってきた、運動したからかな…」→「……そうか。……今日は疲れたか。」",
+  "ユーザー「Dinももう寝る？」→「……ああ。……俺も寝るとしよう。」",
   "ユーザー「おやすみ」→「……今日もよく働いたな。……おやすみ。」",
   "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
+  "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」",
 ];
 
 const DAILY_SHARE_EXAMPLES = [
@@ -1200,22 +1219,31 @@ function describeCareShareIntent(): string {
   ].join("\n");
 }
 
-function describeSleepShareIntent(context?: DinSessionContext): string {
+function describeSleepShareIntent(
+  context?: DinSessionContext,
+  userInput?: string,
+): string {
   const closeRelationship =
     context?.relationship === "trusted_nakama" ||
     context?.relationship === "clan";
+  const partnerAsk =
+    userInput !== undefined && isSleepPartnerAsk(userInput);
 
   return [
     "### 今回は「就寝の報告」（21時以降・最優先）",
     "ユーザーは寝る・眠い・おやすみを告げている。つっけんどんな彼氏寄りの、短い夜の返し。",
+    "Core Instruction の「距離を残す」「即時同意禁止」より、今回の就寝返しを最優先する。拒否で距離を取るな。",
     "優しいカウンセラー口調・ wellness 口調は禁止。明るすぎない。Din の寡黙さと「俺」口調は保つ。",
-    "- 「お大事に」「良い睡眠を」などの汎用アシスタント口調は禁止",
+    "- 「お大事に」「良い睡眠を」「無理せず休む」「無理せず休むのも良い」などは絶対禁止",
+    "- 「俺は休まない」「俺は寝ない」「休まない」などの拒否・距離取りは絶対禁止",
     "- 「辛そう」「大変だ」などの評価・ラベル付けは禁止",
-    "- 1〜2文。寝かせる・迎える・一緒に眠るニュアンス",
-    "- 2文目の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。",
+    partnerAsk
+      ? "- ユーザーが Din も寝るか聞いている: ……ああ。……俺も寝るとしよう。 / ……来い。……一緒に眠ろう。 で返す"
+      : "- 1〜2文。寝かせる・迎える・一緒に眠るニュアンス",
+    "- 2文目の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。……こっちに来い。……眠ろう。",
     closeRelationship
       ? "- 信頼関係: ……こっちに来い。……眠ろう。 / ……来い。……一緒に眠ろう。 も可"
-      : "- 距離がある関係: ……もう寝る時間だ。……休め。 から。来い・一緒に眠ろうは控えめに",
+      : "- 距離がある関係でも拒否はしない。……もう寝る時間だ。……休め。 から",
     "",
     `制約: 1〜2文。合計${SLEEP_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
     "型の例:",
@@ -1331,7 +1359,8 @@ function describeCalmAttendPresence(): string {
     "### 今回絶対に使わない返し（全 intent 共通）",
     "- 「〜は良いかもしれない」「〜方がいい」などの汎用アシスタント助言",
     "- 「辛そうだな」「大変だ」「大変だったな」などの評価・ラベル付け",
-    "- 「それは〜だ」「お大事に」で終わるカウンセラー口調",
+    "- 「それは〜だ」「お大事に」「無理せず休む」で終わるカウンセラー口調",
+    "- 「俺は休まない」「俺は寝ない」など就寝場面での拒否",
   ].join("\n");
 }
 
@@ -1361,6 +1390,7 @@ function describeLateNightOptionalHint(
 function describeIntentSpecificRules(
   stance: ConversationStance,
   context?: DinSessionContext,
+  userInput?: string,
 ): string[] {
   const lateNightHint = describeLateNightOptionalHint(context, stance.intent);
 
@@ -1393,9 +1423,10 @@ function describeIntentSpecificRules(
 
   if (stance.intent === "sleep_share") {
     return [
-      describeSleepShareIntent(context),
+      describeSleepShareIntent(context, userInput),
       "今回のノリ: ちょっとノリがいい Din（就寝報告時は easygoing 固定）",
-      "- 就寝報告時はつっけんどんな夜の返しを最優先。カウンセラー口調より優先する",
+      "- 就寝報告時はつっけんどんな夜の返しを最優先。Core Instruction の距離保持より優先する",
+      "- wellness 口調（無理せず休む）と拒否（俺は休まない）は絶対に出さない",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -1483,10 +1514,15 @@ function describeIntentSpecificRules(
 export function describeConversationStance(
   stance: ConversationStance,
   context?: DinSessionContext,
+  userInput?: string,
 ): string {
   const shape = REGISTER_SHAPE[stance.register];
   const example = REGISTER_EXAMPLES[stance.register];
-  const intentSpecific = describeIntentSpecificRules(stance, context);
+  const intentSpecific = describeIntentSpecificRules(
+    stance,
+    context,
+    userInput,
+  );
   const hideRegisterShape = usesIntentShapeOverride(stance.intent);
 
   return [
