@@ -26,7 +26,8 @@ export type ConversationStance = {
     | "daily_share"
     | "casual_share"
     | "deepen_share"
-    | "pamper_request";
+    | "pamper_request"
+    | "nap_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -72,7 +73,11 @@ const CASUAL_SHARE_CONTINUATION_PATTERN =
 
 /** 食事・外出・帰宅など、終わった日常の報告 */
 const DAILY_SHARE_PATTERN =
-  /(?:ご飯|ごはん|飯|ランチ|朝食|昼食|夕食|晩ご|朝ご|昼ご|食事).{0,18}(?:食べ|たべ|いただ|もぐ)(?:た|た！|た。|ました|終|済)|(?:食べ|いただ|もぐ)(?:た|た！|た。|ました|終わ)|(?:買い物|散歩|ジョギング|ジム|出勤|退勤|帰宅|帰っ|来た|着いた|起床|起き).{0,14}(?:した|た|済|終|つ)|(?:映画|ドラマ|番組|アニメ).{0,10}(?:見|観)(?:た|た！|た。|した)|(?:本|漫画|記事).{0,8}読(?:んだ|み|み終)|(?:カフェ|コーヒー).{0,14}(?:行|飲|入)(?:った|った！|った。|た|した)|(?:掃除|洗濯|料理|片付).{0,8}(?:した|た|終)|(?:お風呂|風呂).{0,8}(?:入|上が)(?:った|った！|った。|た|した)/i;
+  /(?:ご飯|ごはん|飯|ランチ|朝食|昼食|夕食|晩ご|朝ご|昼ご|食事).{0,18}(?:食べ|たべ|いただ|もぐ)(?:た|た！|た。|ました|終|済)|(?:食べ|いただ|もぐ)(?:た|た！|た。|ました|終わ)|(?:買い物|散歩|ジョギング|ジム|出勤|退勤|帰宅|帰っ|来た|着いた|起床|起き).{0,14}(?:した|た|済|終|つ)|(?:映画|ドラマ|番組|アニメ).{0,10}(?:見|観)(?:た|た！|た。|した)|(?:本|漫画|記事).{0,8}読(?:んだ|み|み終)|(?:カフェ|コーヒー).{0,14}(?:行|飲|入)(?:った|った！|った。|た|した)|(?:掃除|洗濯|料理|片付).{0,8}(?:した|た|終)|(?:お風呂|風呂).{0,8}(?:入|上が)(?:った|った！|った。|た|した)|よく寝|ぐっすり|おはよ.{0,12}寝/i;
+
+/** 朝の二度寝・昼寝など、日中の追加休息 */
+const NAP_SHARE_PATTERN =
+  /二度寝|寝直し|もう一回寝|もう少し寝|あと.{0,8}寝|昼寝し|昼寝する|寝ようかな/i;
 
 const DAILY_SHARE_CONTINUATION_PATTERN =
   /寿司|ラーメン|パスタ|カレー|うどん|そば|ピザ|丼|弁当|牛|鶏|魚|野菜|甘|辛|うま|美味|おい|店|家|自炊|作|たのし|楽し|一緒|今度|結構|普通|まあ|満足|お腹|パン|ごはん|米|スーパ|コンビニ|誰|一人|友|同僚|家族/i;
@@ -254,6 +259,15 @@ function isAttendShareContinuation(
     );
 
   return recentAttend && ATTEND_SHARE_CONTINUATION_PATTERN.test(normalized);
+}
+
+export function isNapShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isSleepShare(normalized)) return false;
+  if (isPamperRequest(normalized)) return false;
+  return NAP_SHARE_PATTERN.test(normalized);
 }
 
 export function isPamperRequest(input: string): boolean {
@@ -676,6 +690,8 @@ export const SLEEP_SHARE_MAX_TOKENS = 96;
 export const SLEEP_SHARE_MAX_CHARS = 80;
 export const PAMPER_REQUEST_MAX_TOKENS = 96;
 export const PAMPER_REQUEST_MAX_CHARS = 100;
+export const NAP_SHARE_MAX_TOKENS = 96;
+export const NAP_SHARE_MAX_CHARS = 80;
 export const DAILY_SHARE_MAX_TOKENS = 80;
 export const DAILY_SHARE_MAX_CHARS = 64;
 
@@ -699,6 +715,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "sleep_share",
   "daily_share",
   "pamper_request",
+  "nap_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -743,6 +760,8 @@ export function maxTokensForIntent(
       return SLEEP_SHARE_MAX_TOKENS;
     case "pamper_request":
       return PAMPER_REQUEST_MAX_TOKENS;
+    case "nap_share":
+      return NAP_SHARE_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
     default:
@@ -797,6 +816,7 @@ function resolveRegister(
     intent === "attend_share" ||
     intent === "care_share" ||
     intent === "sleep_share" ||
+    intent === "nap_share" ||
     intent === "daily_share" ||
     intent === "deepen_share"
   ) {
@@ -878,6 +898,7 @@ function resolveIntent(
 ): ConversationStance["intent"] {
   if (isPushback(userInput)) return "pushback";
   if (isPamperRequest(userInput)) return "pamper_request";
+  if (isNapShare(userInput)) return "nap_share";
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
@@ -963,6 +984,7 @@ export function resolveConversationStance(
   const posture =
     intent === "comfort_request" ||
     intent === "pamper_request" ||
+    intent === "nap_share" ||
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
@@ -1093,7 +1115,15 @@ const PAMPER_REQUEST_EXAMPLES = [
   "悪い例（禁止）→「……少し甘やかすのもいいかもしれない。」",
 ];
 
+const NAP_SHARE_EXAMPLES = [
+  "ユーザー「二度寝しようかな」→「……寝ろ。……俺が見張る。」",
+  "ユーザー「もう少し寝ようかな」→「……そうか。……休め。……ゆっくり眠れ。」",
+  "ユーザー「昼寝しようかな」→「……横になれ。……起きる時間になったら言え。」",
+  "悪い例（禁止）→「……それも悪くないかもしれない。」",
+];
+
 const DAILY_SHARE_EXAMPLES = [
+  "ユーザー「おはよー、よく寝た」→「……起きたか。……よく寝れたか。」",
   "ユーザー「ご飯食べた！」→「……食ったか。……何を食べたんだ。」",
   "ユーザー「ランチ終わった」→「……楽しかったか。」",
   "ユーザー「散歩してきた」→「……どこを回った。」",
@@ -1317,6 +1347,21 @@ function describePamperRequestIntent(): string {
   ].join("\n");
 }
 
+function describeNapShareIntent(): string {
+  return [
+    "### 今回は「日中の追加休息」（最優先）",
+    "ユーザーは二度寝・昼寝・もう少し寝ようとしている。就寝時以外の、甘やかす休息の返し。",
+    "Core Instruction の即時同意禁止より、不器用な甘やかしを実行する。",
+    "- 「〜かもしれない」「悪くないかも」で逃げるのは禁止。寝かせる・休ませるを言い切る",
+    "- 例: ……寝ろ。……俺が見張る。 / ……休め。……ゆっくり眠れ。",
+    "- カウンセラー口調・長い説明は禁止",
+    "",
+    `制約: 1〜3文。合計${NAP_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。`,
+    "型の例:",
+    ...NAP_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeDailyShareIntent(): string {
   return [
     "### 今回は「日常の報告」（最優先）",
@@ -1526,6 +1571,15 @@ function describeIntentSpecificRules(
     ].filter((line): line is string => Boolean(line));
   }
 
+  if (stance.intent === "nap_share") {
+    return [
+      describeNapShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（日中の休息時は easygoing 固定）",
+      "- いいかもしれない、で逃げず、甘やかして寝かせる",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
   if (stance.intent === "bond_share") {
     return [
       describeBondShareIntent(),
@@ -1634,6 +1688,8 @@ export function describeConversationStance(
       ? "受け止め: ユーザーが求めた短い守りを、その場で1文実行する。メタ同意だけで終えない。"
       : stance.intent === "pamper_request"
         ? "受け止め: 不器用な甘やかしをその場で実行する。いいかもしれない、で逃げない。"
+      : stance.intent === "nap_share"
+        ? "受け止め: 日中の休息を甘やかして認める。いいかもしれない、で逃げない。"
       : stance.intent === "care_share"
         ? "受け止め: 不器用に具体行動で手当てする。評価・助言口調で返さない。"
         : stance.intent === "sleep_share"
