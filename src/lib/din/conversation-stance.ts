@@ -100,7 +100,7 @@ const DIN_INQUIRY_PATTERN =
 
 /** ユーザーが甘やかし・優しさを求めている */
 const PAMPER_REQUEST_PATTERN =
-  /甘やかして|甘やかして(?:もら|ほしい)|もっと(?:優し|Din|甘)|かわいがって|可愛がって|構って|ねーえ|ねええ|滅入|だめだ、今日/i;
+  /甘やかして|甘やかして(?:もら|ほしい)|いつも甘やか|もっと(?:優し|Din|甘)|かわいがって|可愛がって|構って|ねーえ|ねええ|滅入|だめだ、今日/i;
 
 /** ユーザーが短い守り・慰め・同在を求めている */
 const COMFORT_REQUEST_PATTERN =
@@ -1089,6 +1089,7 @@ const PAMPER_REQUEST_EXAMPLES = [
   "ユーザー「もうちょっと甘やかしてもらっていいですか？」→「……分かった。……無理するな。……休め。傍にいる。」",
   "ユーザー「甘やかして」→「……そうか。……任務は後回しだ。横になれ。」",
   "ユーザー「今日は気が滅入った」→「……そうか。……今日は無理するな。……傍にいる。」",
+  "ユーザー「いつも甘やかして欲しい」→「……分かった。……任務は後回しだ。……傍にいる。」",
   "悪い例（禁止）→「……少し甘やかすのもいいかもしれない。」",
 ];
 
@@ -1420,6 +1421,7 @@ function describeCalmAttendPresence(): string {
     "口調・温度は変えない。評価や wellness 口調も増やさない。",
     "ユーザーが話しかけてきたら、短くても「聴いている・ここにいる」感を出す。",
     "相槌1文だけで会話を切らない場合、2文目に短い同在か短い返球を足してよい。",
+    "甘やかしは就寝時だけではない。疲れ・落ち込み・構って・体の不調には、昼夜を問わず不器用な守り（無理するな、傍にいる、休め）を短く足してよい。",
     "",
     "### 今回絶対に使わない返し（全 intent 共通）",
     "- 「〜は良いかもしれない」「〜方がいい」などの汎用アシスタント助言",
@@ -1447,8 +1449,26 @@ function describeLateNightOptionalHint(
 
   return [
     "### 深夜のみ（任意の一言追加）",
-    "同在の返し方は上記 intent ルールのまま（深夜限定ではない）。",
+    "同在・甘やかしの返し方は上記 intent ルールのまま（深夜限定ではない）。",
     "深夜帯だけ、2文目に「……寝ろ。」「……休め。」を足してもよい（必須ではない）。",
+  ].join("\n");
+}
+
+function describeEverydayPamperHint(
+  context: DinSessionContext | undefined,
+): string | null {
+  if (
+    context?.relationship !== "trusted_nakama" &&
+    context?.relationship !== "clan"
+  ) {
+    return null;
+  }
+
+  return [
+    "### 日中でも甘やかす（信頼関係）",
+    "就寝時だけ甘やかす設計に偏らない。雑談・日常報告・構って・疲れの話にも、不器用な甘やかしを混ぜてよい。",
+    "- 例: ……無理するな。……傍にいる。……任務は後回しだ。……水を取れ。……続けろ。",
+    "- べたべた優しい口調にはしない。就寝以外でも「休め」「傍にいる」は使ってよい",
   ].join("\n");
 }
 
@@ -1603,6 +1623,7 @@ export function describeConversationStance(
   return [
     "## 今回の会話スタンス（Core Instruction より優先）",
     describeCalmAttendPresence(),
+    describeEverydayPamperHint(context),
     ...intentSpecific,
     hideRegisterShape ? null : `今回のノリ: ${REGISTER_LABELS[stance.register]}`,
     ...(hideRegisterShape ? [] : shape.map((line) => `- ${line}`)),
