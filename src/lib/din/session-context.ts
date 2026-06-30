@@ -62,6 +62,17 @@ export function isBedtimeWindow(date = new Date()): boolean {
   return hour >= 21 || hour < 5;
 }
 
+/** 20:00 以降なら「忙しかった」系の振り返り。それ以前は「忙しい」系 */
+export function isPastDayReflectionTime(date = new Date()): boolean {
+  return getJstHour(date) >= 20;
+}
+
+export function getBusyCheckGreeting(date = new Date()): string {
+  return isPastDayReflectionTime(date)
+    ? "忙しかったのか。"
+    : "今日は忙しいのか？";
+}
+
 /** クライアントの timeBand を優先し、就寝系 intent を夜間に確実に有効化する */
 export function isSleepTimeContext(context?: DinSessionContext): boolean {
   if (context?.timeBand === "late_night") return true;

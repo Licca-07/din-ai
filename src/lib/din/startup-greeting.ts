@@ -5,6 +5,7 @@ import {
   type ProactiveOpener,
 } from "@/lib/din/proactive-opener";
 import {
+  getBusyCheckGreeting,
   getLastVisitIso,
   maxIsoTimestamp,
 } from "@/lib/din/session-context";
@@ -28,10 +29,9 @@ const SHORT_RETURN_MESSAGES = [
   "まだ起きていたのか。",
 ];
 
-const MILD_CARE_MESSAGES = [
-  "今日は忙しかったのか。",
-  "少し顔を見ない間に何かあったか。",
-];
+function getMildCareMessages(now = new Date()): string[] {
+  return [getBusyCheckGreeting(now), "少し顔を見ない間に何かあったか。"];
+}
 
 const RECALL_PROBABILITY_24H_PLUS = 0.5;
 
@@ -144,9 +144,9 @@ function resolveShortBandGreeting(
   }
 
   if (roll < 0.9) {
+    const mildCare = getMildCareMessages(now);
     const message =
-      pickStartupFixedMessage(MILD_CARE_MESSAGES, exclude) ??
-      MILD_CARE_MESSAGES[0];
+      pickStartupFixedMessage(mildCare, exclude) ?? mildCare[0];
     return { mode: "fixed", band: "caring", message };
   }
 
@@ -163,10 +163,11 @@ function resolveShortBandGreeting(
 
 function resolveCaringBandGreeting(
   exclude: Set<string>,
+  now = new Date(),
 ): StartupGreetingDecision {
+  const mildCare = getMildCareMessages(now);
   const message =
-    pickStartupFixedMessage(MILD_CARE_MESSAGES, exclude) ??
-    MILD_CARE_MESSAGES[0];
+    pickStartupFixedMessage(mildCare, exclude) ?? mildCare[0];
   return { mode: "fixed", band: "caring", message };
 }
 
@@ -182,8 +183,9 @@ function resolveRecallBandGreeting(
     }
   }
 
+  const mildCare = getMildCareMessages(now);
   const fixed =
-    pickStartupFixedMessage(MILD_CARE_MESSAGES, exclude) ??
+    pickStartupFixedMessage(mildCare, exclude) ??
     pickStartupFixedMessage(SHORT_RETURN_MESSAGES, exclude);
 
   if (fixed) {
@@ -221,7 +223,7 @@ export function resolveStartupGreeting(
   }
 
   if (band === "caring") {
-    return resolveCaringBandGreeting(exclude);
+    return resolveCaringBandGreeting(exclude, now);
   }
 
   return resolveRecallBandGreeting(memory, exclude, now);

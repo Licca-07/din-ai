@@ -1,5 +1,6 @@
 import {
   buildSessionContext,
+  getBusyCheckGreeting,
   type DinAbsence,
   type DinSessionContext,
 } from "@/lib/din/session-context";
@@ -27,7 +28,7 @@ const MAX_STORED_SEEDS = 8;
 
 const SESSION_OPENERS: Record<DinAbsence, string[]> = {
   normal: ["久しぶりだな。", "調子はどうだ。", "この間、何かあったか。"],
-  one_day: ["一日ぶりだ。", "昨日は忙しかったのか。", "少し顔を見ない間に何かあったか。"],
+  one_day: ["一日ぶりだ。", "少し顔を見ない間に何かあったか。"],
   three_days: [
     "久しぶりだ。",
     "この間は何をしていた？",
@@ -94,14 +95,17 @@ function pickRandom<T>(items: T[]): T | null {
 function selectSessionSeed(
   context: DinSessionContext,
   excludeSeeds: Set<string>,
+  now = new Date(),
 ): string {
-  const pool = SESSION_OPENERS[context.absence].filter(
-    (seed) => !excludeSeeds.has(normalizeSeed(seed)),
-  );
+  const pool = [...SESSION_OPENERS[context.absence]];
+  if (context.absence === "one_day") {
+    pool.unshift(getBusyCheckGreeting(now));
+  }
+
+  const filtered = pool.filter((seed) => !excludeSeeds.has(normalizeSeed(seed)));
 
   return (
-    pickRandom(pool.length > 0 ? pool : SESSION_OPENERS[context.absence]) ??
-    "久しぶりだな。"
+    pickRandom(filtered.length > 0 ? filtered : pool) ?? "久しぶりだな。"
   );
 }
 
@@ -156,7 +160,7 @@ export function buildSessionOpener(
   return {
     ...buildBaseOpener(memory),
     source: "session",
-    seedTopic: selectSessionSeed(sessionContext, excludeSeeds),
+    seedTopic: selectSessionSeed(sessionContext, excludeSeeds, now),
   };
 }
 
