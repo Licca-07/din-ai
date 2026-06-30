@@ -153,6 +153,8 @@ export async function POST(request: Request) {
             ? 0.68
           : conversationStance.intent === "schedule_share"
             ? 0.67
+          : conversationStance.intent === "return_home_share"
+            ? 0.66
           : conversationStance.intent === "din_inquiry"
             ? 0.66
           : conversationStance.intent === "care_share"

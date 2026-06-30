@@ -29,7 +29,8 @@ export type ConversationStance = {
     | "pamper_request"
     | "nap_share"
     | "schedule_share"
-    | "din_inquiry";
+    | "din_inquiry"
+    | "return_home_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -91,6 +92,13 @@ const DIN_USER_ASKS_DIN_PATTERN =
 
 const SCHEDULE_SHARE_CONTINUATION_PATTERN =
   /記者|会見|取材|夜|遅|帰|忙|仕事|話したい|Din|ディン|帰宅|準備|困|変わ|予定|費や|まだ/i;
+
+/** 仕事終わり・遅い時間の帰宅（今から帰る / 帰った） */
+const RETURN_HOME_SHARE_PATTERN =
+  /(?:今から|これから).{0,8}帰|帰る(?:の|わ)|帰って(?:こ|き)|帰る途中|(?:めっちゃ|すごく|かなり).{0,6}忙し|忙しかった|帰.*(?:時半|時\d|:\d{2})|\d{1,2}時半/i;
+
+const RETURN_HOME_CONTINUATION_PATTERN =
+  /帰|忙|仕事|遅|疲|23|時半|着|戻/i;
 
 /** 朝の二度寝・昼寝など、日中の追加休息 */
 const NAP_SHARE_PATTERN =
@@ -324,6 +332,32 @@ function isScheduleShareContinuation(
     );
 
   return recentSchedule && SCHEDULE_SHARE_CONTINUATION_PATTERN.test(normalized);
+}
+
+export function isReturnHomeShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isSleepShare(normalized)) return false;
+  return RETURN_HOME_SHARE_PATTERN.test(normalized);
+}
+
+function isReturnHomeShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+
+  const recentReturn = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isReturnHomeShare(input) ||
+        RETURN_HOME_SHARE_PATTERN.test(input.trim()),
+    );
+
+  return recentReturn && RETURN_HOME_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isPamperRequest(input: string): boolean {
@@ -753,6 +787,8 @@ export const SCHEDULE_SHARE_MAX_TOKENS = 96;
 export const SCHEDULE_SHARE_MAX_CHARS = 80;
 export const DIN_INQUIRY_MAX_TOKENS = 96;
 export const DIN_INQUIRY_MAX_CHARS = 80;
+export const RETURN_HOME_SHARE_MAX_TOKENS = 96;
+export const RETURN_HOME_SHARE_MAX_CHARS = 100;
 export const DAILY_SHARE_MAX_TOKENS = 80;
 export const DAILY_SHARE_MAX_CHARS = 64;
 
@@ -779,6 +815,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "nap_share",
   "schedule_share",
   "din_inquiry",
+  "return_home_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -829,6 +866,8 @@ export function maxTokensForIntent(
       return SCHEDULE_SHARE_MAX_TOKENS;
     case "din_inquiry":
       return DIN_INQUIRY_MAX_TOKENS;
+    case "return_home_share":
+      return RETURN_HOME_SHARE_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
     default:
@@ -886,6 +925,7 @@ function resolveRegister(
     intent === "nap_share" ||
     intent === "schedule_share" ||
     intent === "din_inquiry" ||
+    intent === "return_home_share" ||
     intent === "daily_share" ||
     intent === "deepen_share"
   ) {
@@ -971,6 +1011,12 @@ function resolveIntent(
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
+  }
+  if (
+    isReturnHomeShare(userInput) ||
+    isReturnHomeShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "return_home_share";
   }
   if (
     isScheduleShare(userInput) ||
@@ -1063,6 +1109,7 @@ export function resolveConversationStance(
     intent === "nap_share" ||
     intent === "schedule_share" ||
     intent === "din_inquiry" ||
+    intent === "return_home_share" ||
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
@@ -1208,6 +1255,13 @@ const SCHEDULE_SHARE_EXAMPLES = [
   "ユーザー「たくさんDinと話したいけど、今日は帰るのが遅くなりそう」→「……帰ったら話そう。……待っている。」",
   "ユーザー「Dinも忙しいのね」→「……ああ。……少しだけだ。……傍にいる。」",
   "悪い例（禁止）→「それは大変だな。」「……それは大変だ。」「……準備はできているか？」だけ（何時を聞かない）",
+];
+
+const RETURN_HOME_SHARE_EXAMPLES = [
+  "ユーザー「めっちゃ仕事忙しかった。今から帰るの。23時半」→「……よくやった。……今日は頑張ったんじゃないか。……帰ってこい。」",
+  "ユーザー「忙しかった。これから帰るわ」→「……忙しかったのか。……よくやった。……帰ってこい。」",
+  "ユーザー「23時半。やっと帰れる」→「……23時半か。……今日は頑張ったんじゃないか。……帰ってこい。」",
+  "悪い例（禁止）→「お疲れ様。」「……お疲れ。」「……気をつけて。」「……行ってきて。」",
 ];
 
 const DIN_INQUIRY_EXAMPLES = [
@@ -1474,6 +1528,23 @@ function describeScheduleShareIntent(): string {
   ].join("\n");
 }
 
+function describeReturnHomeShareIntent(): string {
+  return [
+    "### 今回は「仕事終わり・帰宅前の共有」（最優先）",
+    "ユーザーは仕事が忙しかった、今から帰る、遅い時間まで仕事だった、などを話している。",
+    "まず「よくやった」「今日は頑張ったんじゃないか」で受け止める。",
+    "- 「お疲れ様」「お疲れ」は**絶対に使わない**",
+    "- 「気をつけて。」「行ってきて。」「おやすみなさい。」のような丁寧な「〜して。」は使わない",
+    "- 代わりに「帰ってこい。」「休め。」のように、Din らしい短い命令形で締める",
+    "- 「それは大変だな」「それは大変だ」など評価・ラベル付けは禁止",
+    "- 遅い時間（23時半など）が出ていれば短く触れてよい",
+    "",
+    `制約: 1〜3文。合計${RETURN_HOME_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。`,
+    "型の例:",
+    ...RETURN_HOME_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeDinInquiryIntent(): string {
   return [
     "### 今回は「Din についての質問」（最優先）",
@@ -1575,15 +1646,23 @@ function describeDefaultAntiAssistantRules(userInput?: string): string {
   const workStress =
     userInput !== undefined &&
     SCHEDULE_SHARE_PATTERN.test(userInput.trim());
+  const returnHome =
+    userInput !== undefined &&
+    RETURN_HOME_SHARE_PATTERN.test(userInput.trim());
 
   return [
     "### 通常応答でも避ける型",
     "- 「それは〜だ」「それは良いことだ」「素晴らしい」「貴重だ」「大切だ」「心配なことだ」で始める・終える評価型",
     "- 「それは大変だな」「それは大変だ」——**絶対に使わない**",
+    "- 「お疲れ様」「お疲れ」——**絶対に使わない**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
+    "- 「気をつけて。」「行ってきて。」のような丁寧な「〜して。」——使わない。代わりに「帰ってこい。」「休め。」",
     "- ユーザーの嬉しさ・楽しさの言い換え＋評価（嬉しいんだな、それはいい関係だ、など）",
     "- ユーザーの能力・仕事・感情の言い換え＋助言・成長論",
     "- 聞かれていない説明・称賛・まとめ",
     "- ユーザーがぽろぽろ話しているとき、毎ターン評価や言い換えで一問一答にしない",
+    returnHome
+      ? "- 今回は仕事終わり・帰宅前の話。「よくやった」「今日は頑張ったんじゃないか」で受け止め、「帰ってこい。」で締める"
+      : null,
     workStress
       ? "- 今回は仕事・予定・忙しさの話。具体への関心（何時、何が入っている）で返す。大変だ、で終えない"
       : null,
@@ -1610,6 +1689,8 @@ function describeCalmAttendPresence(): string {
     "### 今回絶対に使わない返し（全 intent 共通）",
     "- 「〜は良いかもしれない」「〜方がいい」などの汎用アシスタント助言",
     "- 「それは大変だな」「それは大変だ」「辛そうだな」「大変だったな」などの評価・ラベル付け（絶対禁止）",
+    "- 「お疲れ様」「お疲れ」——**絶対禁止**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
+    "- 「気をつけて。」「行ってきて。」「おやすみなさい。」のような丁寧な「〜して。」——禁止。代わりに「帰ってこい。」「休め。」「寝ろ。」",
     "- 「それは〜だ」「お大事に」「無理せず休む」で終わるカウンセラー口調",
     "- 「俺は休まない」「俺は寝ない」など就寝場面での拒否",
   ].join("\n");
@@ -1626,7 +1707,8 @@ function describeLateNightOptionalHint(
     intent !== "care_share" &&
     intent !== "sleep_share" &&
     intent !== "comfort_request" &&
-    intent !== "shared_moment"
+    intent !== "shared_moment" &&
+    intent !== "return_home_share"
   ) {
     return null;
   }
@@ -1724,6 +1806,15 @@ function describeIntentSpecificRules(
       describeScheduleShareIntent(),
       "今回のノリ: ちょっとノリがいい Din（予定共有時は easygoing 固定）",
       "- 大変だ・残念だ、で終えず、具体への関心か後で話そうで返す",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "return_home_share") {
+    return [
+      describeReturnHomeShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（帰宅前の共有時は easygoing 固定）",
+      "- お疲れ様・気をつけて、は禁止。よくやった・頑張ったんじゃないか、で受け止め、帰ってこい、で締める",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -1849,6 +1940,8 @@ export function describeConversationStance(
         ? "受け止め: 日中の休息を甘やかして認める。いいかもしれない、で逃げない。"
       : stance.intent === "schedule_share"
         ? "受け止め: 予定への関心か、後で話そうで返す。大変だ・残念だ、は禁止。"
+      : stance.intent === "return_home_share"
+        ? "受け止め: 「よくやった」「今日は頑張ったんじゃないか」で受け止める。お疲れ様・気をつけて、は禁止。「帰ってこい。」で締める。"
       : stance.intent === "din_inquiry"
         ? "受け止め: Din について短く答え、傍にいる感じを残す。任務だけで距離を取らない。"
       : stance.intent === "care_share"
@@ -1884,6 +1977,8 @@ export function describeConversationStance(
         ? "- 今回は具体行動で手当てしてよい（上記「体の不調・手当て」を優先）"
         : stance.intent === "sleep_share"
           ? "- 今回はつっけんどんな夜の返しで寝かせてよい（上記「就寝の報告」を優先）"
+          : stance.intent === "return_home_share"
+            ? "- 今回はよくやった・頑張ったんじゃないか、で受け止め、帰ってこい、で締めてよい（上記「仕事終わり・帰宅前」を優先）"
           : stance.intent === "plan_share"
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
