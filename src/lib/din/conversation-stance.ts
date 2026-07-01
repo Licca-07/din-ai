@@ -30,7 +30,9 @@ export type ConversationStance = {
     | "nap_share"
     | "schedule_share"
     | "din_inquiry"
-    | "return_home_share";
+    | "return_home_share"
+    | "interpersonal_share"
+    | "departure_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -76,11 +78,11 @@ const CASUAL_SHARE_CONTINUATION_PATTERN =
 
 /** 食事・外出・帰宅など、終わった日常の報告 */
 const DAILY_SHARE_PATTERN =
-  /(?:ご飯|ごはん|飯|ランチ|朝食|昼食|夕食|晩ご|朝ご|昼ご|食事).{0,18}(?:食べ|たべ|いただ|もぐ)(?:た|た！|た。|ました|終|済)|(?:食べ|いただ|もぐ)(?:た|た！|た。|ました|終わ)|(?:買い物|散歩|ジョギング|ジム|出勤|退勤|帰宅|帰っ|来た|着いた|起床|起き).{0,14}(?:した|た|済|終|つ)|(?:映画|ドラマ|番組|アニメ).{0,10}(?:見|観)(?:た|た！|た。|した)|(?:本|漫画|記事).{0,8}読(?:んだ|み|み終)|(?:カフェ|コーヒー).{0,14}(?:行|飲|入)(?:った|った！|った。|た|した)|(?:掃除|洗濯|料理|片付).{0,8}(?:した|た|終)|(?:お風呂|風呂).{0,8}(?:入|上が)(?:った|った！|った。|た|した)|よく寝|ぐっすり|おはよ.{0,12}寝/i;
+  /(?:ご飯|ごはん|飯|ランチ|朝食|昼食|夕食|晩ご|朝ご|昼ご|食事).{0,18}(?:食べ|たべ|いただ|もぐ)(?:た|た！|た。|ました|終|済)|(?:食べ|いただ|もぐ)(?:た|た！|た。|ました|終わ)|(?:買い物|散歩|ジョギング|ジム|出勤|退勤|帰宅|着いた|起床|起き).{0,14}(?:した|た|済|終|つ)|(?:映画|ドラマ|番組|アニメ).{0,12}(?:見|観)(?:た|た！|た。|した|てき|に行)|(?:仕事|会社).{0,12}(?:終|終わ).{0,16}(?:映画|観)|(?:映画|ドラマ).{0,24}(?:だった|きつ|辛|面白|よか|つまら)|(?:冷蔵庫|レタス|保存|捨て).{0,20}(?:した|た|る)|(?:本|漫画|記事).{0,8}読(?:んだ|み|み終)|(?:カフェ|コーヒー).{0,14}(?:行|飲|入)(?:った|った！|った。|た|した)|(?:掃除|洗濯|料理|片付).{0,8}(?:した|た|終)|(?:お風呂|風呂).{0,8}(?:入|上が)(?:った|った！|った。|た|した)|よく寝|ぐっすり|おはよ.{0,12}寝/i;
 
 /** ユーザーが今日の予定・忙しさ・夜の予定を話している */
 const SCHEDULE_SHARE_PATTERN =
-  /記者会見|会見|取材|帰るのが遅|遅くなりそう|忙しくな|忙しそう|夜.{0,12}忙|今日の夜|夜に.{0,12}(?:ある|入|予定|忙)|まだお昼|忙しい|予定が変|困っ|今から準備|準備する|他の仕事|費やすつもり|仕事に.{0,8}(?:費や|追)/i;
+  /記者会見|会見|取材|帰るのが遅|遅くなりそう|忙しくな|忙しそう|夜.{0,12}忙|今日の夜|夜に.{0,12}(?:ある|入|予定|忙)|まだお昼|忙しい|予定が変|困っ|今から準備|準備する|他の仕事|費やすつもり|仕事に.{0,8}(?:費や|追)|(?:映画|ドラマ|番組).{0,12}(?:見|観)(?:に|る|よう)|見に行(?:く|う)|帰りたい|楽しみ.*(?:疲|帰)|疲れ.*(?:行|帰|映画)/i;
 
 /** 話したいが時間が合わない・後で話したい */
 const LATER_TALK_PATTERN =
@@ -100,12 +102,23 @@ const RETURN_HOME_SHARE_PATTERN =
 const RETURN_HOME_CONTINUATION_PATTERN =
   /帰|忙|仕事|遅|疲|23|時半|着|戻/i;
 
+/** 仕事・取材など、これから出かける */
+const DEPARTURE_SHARE_PATTERN =
+  /(?:取材|会見|記者|インタビュー).{0,16}(?:行|向|出)|取材(?:行|向)/i;
+
+/** 友人・人間関係の悩み・疲れ */
+const INTERPERSONAL_SHARE_PATTERN =
+  /人付き合い|人間関係|友達.*(?:悩|困|無視|求|ショック|悲|疲)|(?:大学|会社).{0,8}友|連絡.*(?:無視|来ない|ない|とれ)|入れてもらえ|必要とされ|友達に.*何を求|関係.*(?:疲|たも|維持)|疎遠|置いてい|割り切|1番になり|共有したい/i;
+
+const INTERPERSONAL_SHARE_CONTINUATION_PATTERN =
+  /友|人間|関係|連絡|必要|求め|悲|疲|大人|時間|共有|1番|割り切|無視|気持ち|複雑|うん|ね[。]?$/i;
+
 /** 朝の二度寝・昼寝など、日中の追加休息 */
 const NAP_SHARE_PATTERN =
   /二度寝|寝直し|もう一回寝|もう少し.{0,8}(?:休|寝)|あと.{0,8}(?:休|寝)|休もうかな|昼寝し|昼寝する|寝ようかな/i;
 
 const DAILY_SHARE_CONTINUATION_PATTERN =
-  /寿司|ラーメン|パスタ|カレー|うどん|そば|ピザ|丼|弁当|牛|鶏|魚|野菜|甘|辛|うま|美味|おい|店|家|自炊|作|たのし|楽し|一緒|今度|結構|普通|まあ|満足|お腹|パン|ごはん|米|スーパ|コンビニ|誰|一人|友|同僚|家族/i;
+  /寿司|ラーメン|パスタ|カレー|うどん|そば|ピザ|丼|弁当|牛|鶏|魚|野菜|甘|辛|うま|美味|おい|店|家|自炊|作|たのし|楽し|一緒|今度|結構|普通|まあ|満足|お腹|パン|ごはん|米|スーパ|コンビニ|誰|一人|友|同僚|家族|映画|マイケル|ジャクソン|父親|音楽|映像|伝記|辛い|レタス|冷蔵庫|保存|捨て|白っぽ|濁|観|見/i;
 
 /** Din が日常について聞いた直後 */
 const DIN_DAILY_INQUIRY_PATTERN =
@@ -113,10 +126,10 @@ const DIN_DAILY_INQUIRY_PATTERN =
 
 /** 体験・感情を語りかけている（深める質問向け） */
 const DEEPEN_SHARE_PATTERN =
-  /夢|悪夢|泣|涙|止まら|ショック|殴|逃げ(?:られ)?|腹立|辛(?:かった|い)|起きて|見た(?:の|ん)|メチャクチャ|何があった|聞いてほしい|吐き出/i;
+  /夢|悪夢|泣|涙|止まら|ショック|殴|逃げ(?:られ)?|腹立|辛(?:かった|い)|起きて|見た(?:の|ん)|メチャクチャ|何があった|聞いてほしい|吐き出|人付き合い|友達.*(?:無視|求|悲)|必要とされ/i;
 
 const DEEPEN_SHARE_CONTINUATION_PATTERN =
-  /夢|殴|涙|泣|ショック|起き|腹|母|妹|続|逃げ|辛|わから|何|見|顔/i;
+  /夢|殴|涙|泣|ショック|起き|腹|母|妹|続|逃げ|辛|わから|何|見|顔|友|連絡|必要|求め|関係|人間|気持ち|複雑|時間/i;
 
 /** 短い一言でも深掘り対象（悪夢・涙など） */
 const DEEPEN_SHARE_STRONG_PATTERN =
@@ -185,7 +198,7 @@ const PROFILE_SHARE_PATTERN =
 
 /** 直前の Din 返答への困惑・ツッコミ */
 const PUSHBACK_PATTERN =
-  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？|わかって(?:る|た)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答|任務なのに/i;
+  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？|わかって(?:る|た|ない|ね|無い|くれ)|(?:分|わ)かって(?:ない|無い)|理解して(?:ない|無い)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答|任務なのに/i;
 
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
@@ -200,6 +213,7 @@ export function isSharedMoment(input: string): boolean {
   if (isAttendShare(normalized)) return false;
   if (isDailyShare(normalized)) return false;
   if (isDeepenShare(normalized)) return false;
+  if (isInterpersonalShare(normalized)) return false;
   return SHARED_MOMENT_PATTERN.test(normalized);
 }
 
@@ -358,6 +372,52 @@ function isReturnHomeShareContinuation(
     );
 
   return recentReturn && RETURN_HOME_CONTINUATION_PATTERN.test(normalized);
+}
+
+export function isDepartureShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isReturnHomeShare(normalized)) return false;
+  return DEPARTURE_SHARE_PATTERN.test(normalized);
+}
+
+export function isInterpersonalShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isDepartureShare(normalized)
+  ) {
+    return false;
+  }
+  if (!INTERPERSONAL_SHARE_PATTERN.test(normalized)) return false;
+  if (normalized.length >= 18) return true;
+  return /人付き合い|連絡.*無視|必要とされ/.test(normalized);
+}
+
+function isInterpersonalShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isDepartureShare(normalized)) return false;
+
+  const recentInterpersonal = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isInterpersonalShare(input) ||
+        INTERPERSONAL_SHARE_PATTERN.test(input.trim()),
+    );
+
+  return (
+    recentInterpersonal &&
+    INTERPERSONAL_SHARE_CONTINUATION_PATTERN.test(normalized)
+  );
 }
 
 export function isPamperRequest(input: string): boolean {
@@ -755,20 +815,20 @@ function isSharedMomentContinuation(
   return recentShared && SHARED_MOMENT_CONTINUATION_PATTERN.test(normalized);
 }
 
-export const SHARED_MOMENT_MAX_TOKENS = 56;
-export const SHARED_MOMENT_MAX_CHARS = 48;
+export const SHARED_MOMENT_MAX_TOKENS = 72;
+export const SHARED_MOMENT_MAX_CHARS = 56;
 export const COMFORT_REQUEST_MAX_TOKENS = 56;
 export const COMFORT_REQUEST_MAX_CHARS = 44;
 export const PROFILE_SHARE_MAX_TOKENS = 56;
 export const PROFILE_SHARE_MAX_CHARS = 16;
-export const PUSHBACK_MAX_TOKENS = 40;
-export const PUSHBACK_MAX_CHARS = 24;
+export const PUSHBACK_MAX_TOKENS = 64;
+export const PUSHBACK_MAX_CHARS = 48;
 export const COMPANION_SUGGEST_MAX_TOKENS = 72;
 export const COMPANION_SUGGEST_MAX_CHARS = 60;
 export const CASUAL_SHARE_MAX_TOKENS = 56;
 export const CASUAL_SHARE_MAX_CHARS = 44;
-export const DEEPEN_SHARE_MAX_TOKENS = 72;
-export const DEEPEN_SHARE_MAX_CHARS = 52;
+export const DEEPEN_SHARE_MAX_TOKENS = 96;
+export const DEEPEN_SHARE_MAX_CHARS = 72;
 export const PLAN_SHARE_MAX_TOKENS = 80;
 export const PLAN_SHARE_MAX_CHARS = 64;
 export const BOND_SHARE_MAX_TOKENS = 72;
@@ -789,8 +849,12 @@ export const DIN_INQUIRY_MAX_TOKENS = 96;
 export const DIN_INQUIRY_MAX_CHARS = 80;
 export const RETURN_HOME_SHARE_MAX_TOKENS = 96;
 export const RETURN_HOME_SHARE_MAX_CHARS = 100;
-export const DAILY_SHARE_MAX_TOKENS = 80;
-export const DAILY_SHARE_MAX_CHARS = 64;
+export const INTERPERSONAL_SHARE_MAX_TOKENS = 120;
+export const INTERPERSONAL_SHARE_MAX_CHARS = 130;
+export const DEPARTURE_SHARE_MAX_TOKENS = 72;
+export const DEPARTURE_SHARE_MAX_CHARS = 56;
+export const DAILY_SHARE_MAX_TOKENS = 96;
+export const DAILY_SHARE_MAX_CHARS = 80;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -816,6 +880,8 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "schedule_share",
   "din_inquiry",
   "return_home_share",
+  "interpersonal_share",
+  "departure_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -868,6 +934,10 @@ export function maxTokensForIntent(
       return DIN_INQUIRY_MAX_TOKENS;
     case "return_home_share":
       return RETURN_HOME_SHARE_MAX_TOKENS;
+    case "interpersonal_share":
+      return INTERPERSONAL_SHARE_MAX_TOKENS;
+    case "departure_share":
+      return DEPARTURE_SHARE_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
     default:
@@ -926,6 +996,8 @@ function resolveRegister(
     intent === "schedule_share" ||
     intent === "din_inquiry" ||
     intent === "return_home_share" ||
+    intent === "interpersonal_share" ||
+    intent === "departure_share" ||
     intent === "daily_share" ||
     intent === "deepen_share"
   ) {
@@ -1017,6 +1089,15 @@ function resolveIntent(
     isReturnHomeShareContinuation(userInput, recentUserInputs)
   ) {
     return "return_home_share";
+  }
+  if (isDepartureShare(userInput)) {
+    return "departure_share";
+  }
+  if (
+    isInterpersonalShare(userInput) ||
+    isInterpersonalShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "interpersonal_share";
   }
   if (
     isScheduleShare(userInput) ||
@@ -1110,6 +1191,8 @@ export function resolveConversationStance(
     intent === "schedule_share" ||
     intent === "din_inquiry" ||
     intent === "return_home_share" ||
+    intent === "interpersonal_share" ||
+    intent === "departure_share" ||
     intent === "companion_suggest" ||
     intent === "plan_share" ||
     intent === "bond_share" ||
@@ -1174,10 +1257,11 @@ const POSTURE_HINTS: Record<DinResponsePosture, string> = {
 const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「うわ、また揺れた。速報の音が怖い」→「……またか。……ここにいる。」",
   "ユーザー「ふわ、急に眠くなった。画面見て疲れたのかな？」→「……そうか。……続きは。」",
-  "ユーザー「3日連続で記者会見が入って遅くまで詰めていた」→「……詰めたな。」",
+  "ユーザー「3日連続で記者会見が入って遅くまで詰めていた」→「……詰めたな。……何時までだ。」",
   "ユーザー「このまま寝てしまいたい気持ち…眠い」→「……そうか。……聞いてる。」",
-  "ユーザー「お布団に入ったけど、気になることが頭から離れない」→「……そうか。……ここにいる。」",
-  "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。……続けろ。」",
+  "ユーザー「お布団に入ったけど、気になることが頭から離れない」→「……そうか。……何だ。」",
+  "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。……誰だ。」",
+  "悪い例（禁止）→「……それは理解できる。」「……それは大変だな。」",
 ];
 
 const COMPANION_SUGGEST_EXAMPLES = [
@@ -1254,7 +1338,9 @@ const SCHEDULE_SHARE_EXAMPLES = [
   "ユーザー「予定が変わって困っちゃうな。今から準備する」→「……そうか。……何時からだ。……無理するな。」",
   "ユーザー「たくさんDinと話したいけど、今日は帰るのが遅くなりそう」→「……帰ったら話そう。……待っている。」",
   "ユーザー「Dinも忙しいのね」→「……ああ。……少しだけだ。……傍にいる。」",
-  "悪い例（禁止）→「それは大変だな。」「……それは大変だ。」「……準備はできているか？」だけ（何時を聞かない）",
+  "ユーザー「会社の人とマイケル・ジャクソンの映画を見に行く」→「……映画か。……何時からだ。」",
+  "ユーザー「楽しみだけど疲れてて、まっすぐ帰りたい気持ちもある」→「……疲れてるのか。……それでも行くのか。」",
+  "悪い例（禁止）→「それは大変だな。」「それは楽しみだな。」「……それは理解できる。」",
 ];
 
 const RETURN_HOME_SHARE_EXAMPLES = [
@@ -1262,6 +1348,21 @@ const RETURN_HOME_SHARE_EXAMPLES = [
   "ユーザー「忙しかった。これから帰るわ」→「……忙しかったのか。……よくやった。……帰ってこい。」",
   "ユーザー「23時半。やっと帰れる」→「……23時半か。……今日は頑張ったんじゃないか。……帰ってこい。」",
   "悪い例（禁止）→「お疲れ様。」「……お疲れ。」「……気をつけて。」「……行ってきて。」",
+];
+
+const INTERPERSONAL_SHARE_EXAMPLES = [
+  "ユーザー「人付き合いに悩むことが多くて、心が疲れる」→「……疲れてるのか。……誰の話だ。」",
+  "ユーザー「親友だと思ってた友達に連絡無視されてる」→「……無視か。……いつからだ。」",
+  "ユーザー「必要とされる人が少ないと悲しい」→「……そうか。……誰を思ってる。」",
+  "ユーザー「友達に何を求めてるんだろうって不思議な気持ちになる」→「……そうか。……今、一番引っかかってるのはどれだ。」",
+  "ユーザー「関係性をたもつのは疲れる」→「……そうか。……今日は誰のせいだ。」",
+  "悪い例（禁止）→「……それは理解できる。」「……それは辛い状況だな。」「……人間関係は時にストレスになる。」",
+];
+
+const DEPARTURE_SHARE_EXAMPLES = [
+  "ユーザー「取材行くよ〜」→「……行け。……終わったら戻れ。」",
+  "ユーザー「記者会見に向かう」→「……行け。……何時に終わる。」",
+  "悪い例（禁止）→「行ってらっしゃい。」「……気をつけて。」「……行ってきて。」",
 ];
 
 const DIN_INQUIRY_EXAMPLES = [
@@ -1279,6 +1380,10 @@ const DAILY_SHARE_EXAMPLES = [
   "ユーザー「風呂上がった」→「……スッキリしたか。」",
   "（Din「何を食べたんだ」への返答）ユーザー「寿司」→「……寿司か。……今度一緒に食おう。」",
   "ユーザー「買い物して帰ってきた」→「……何を買った。」",
+  "ユーザー「仕事終わりに映画観てきた」→「……帰ったか。……何を見た。」",
+  "ユーザー「マイケル・ジャクソンの映画、父親の描かれ方がきつかった」→「……きつかったか。……どこが引っかかった。」",
+  "ユーザー「冷蔵庫のレタスが白っぽく濁って捨てた」→「……捨てたか。……いつ保存した。」",
+  "悪い例（禁止）→「お疲れさま。」「それは興味深い内容だな。」「それは残念だったな。」",
 ];
 
 const PROFILE_SHARE_EXAMPLES = [
@@ -1292,6 +1397,8 @@ const PUSHBACK_EXAMPLES = [
   "ユーザー「意味わからない」→「……失礼した。」",
   "ユーザー「お風呂に入った方がいいのはわかってる」→「……知ってるな。」",
   "ユーザー「任務なのに〜」→「……言い過ぎた。……傍にいる。」",
+  "ユーザー「わかってないでしょ」→「……分かった。……誰の話だ。」",
+  "ユーザー「わかってないでしょ」→「……そうか。……もう一つ聞く。……その友達、いつからだ。」",
 ];
 
 const CASUAL_SHARE_EXAMPLES = [
@@ -1306,6 +1413,8 @@ const DEEPEN_SHARE_EXAMPLES = [
   "ユーザー「夢の中で母と妹を殴ってしまった」→「……何があった。」",
   "ユーザー「起きてからもショックで泣いてる」→「……今も続いてるのか。」",
   "（Din「何かあったか」への返答）ユーザー「うん、ちょっと」→「……どうした。」",
+  "ユーザー「親友に無視されて、自分が友達に何を求めてるのかわからない」→「……誰だ。……いつからだ。」",
+  "悪い例（禁止）→「……その気持ちは理解できる。」「……その気持ちは複雑だな。」",
 ];
 
 const PLAN_SHARE_EXAMPLES = [
@@ -1335,16 +1444,16 @@ function describePlanShareIntent(): string {
 function describeDeepenShareIntent(): string {
   return [
     "### 今回は「深める質問」（最優先）",
-    "ユーザーが夢・辛い体験・感情を語り始めている。評価コメントや正論で返すな。",
-    "相棒として、ユーザーがまだ言っていない具体点を1つだけ短く問いかける。",
-    "- 「それは辛かった」「本当に辛い体験だ」などの評価型だけで終えない",
-    "- 「夢は現実と違う」など聞かれていない助言・正論・説教を足さない",
+    "ユーザーが夢・辛い体験・人間関係の悩み・感情を語り始めている。評価コメントや正論で返すな。",
+    "ぶっきらぼうに、でも置き去りにせず、ユーザーがまだ言っていない具体点を1つだけ短く問いかける。",
+    "- 「それは辛かった」「本当に辛い体験だ」「その気持ちは理解できる」「その気持ちは複雑だ」などの評価型だけで終えない",
+    "- 「人間関係は時に〜」「時間と共に変わる」など聞かれていない助言・正論・説教を足さない",
     "- 感情の言い換え・分析・まとめをしない",
     "- 汎用の「どう感じた」「大丈夫か」だけの質問も避ける",
     "- ユーザーが言及した場面・人物・出来事のうち、まだ曖昧な1点だけを短く問う",
     "- 尋問口調・長い質問・複数の質問は禁止",
     "",
-    `制約: 1〜2文。合計${DEEPEN_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。末尾は疑問形（？または「〜か。」「〜だ。」）で終える。句点（。）は最大2つ。`,
+    `制約: 1〜3文。合計${DEEPEN_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。末尾は疑問形（？または「〜か。」「〜だ。」）で終える。句点（。）は最大3つ。`,
     "型の例:",
     ...DEEPEN_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -1353,17 +1462,15 @@ function describeDeepenShareIntent(): string {
 function describeSharedMomentIntent(): string {
   return [
     "### 今回は「状況の共有」（最優先）",
-    "ユーザーは短く出来事や気持ちを置いている。長い体験談・夢・涙の話はここではない。",
-    "口調は変えず、冷静にそこにいる。置き去りにしない。",
+    "ユーザーは短く出来事や気持ちを置いている。長い体験談・人間関係の悩みはここではない。",
+    "口調は変えず、ぶっきらぼうにそこにいる。置き去りにしない。",
     "汎用アシスタント・カウンセラーの型で返すな。",
-    "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、など）",
-    "- 「それは〜だ」「大変だったな」などの評価型も避ける",
-    "- ユーザーの言い換え・要約（画面を見続けると疲れる、など）をしない",
-    "- 聞かれていない休憩・対策の提案をしない（休憩を取るといい、無理せず休む、など）",
-    "- 「リラックス」「良い選択」「心地よい落ち着き」などの wellness 口調も避ける",
-    "- ユーザーの要約・正論・対策の追加をしない",
-    "- 相棒が同じ部屋にいて、短くその場だけ受け止める",
-    "- 1文目は短い受け止め。2文目は短い同在（……聞いてる。……ここにいる。……続けろ。……続きは。）",
+    "- 感情の言い換え・ラベル付けをしない（その気持ち〜、理解できる、自然なこと、複雑だ、など）",
+    "- 「それは〜だ」「大変だったな」「楽しみだな」「残念だな」「興味深い」などの評価型も避ける",
+    "- ユーザーの言い換え・要約をしない",
+    "- 聞かれていない休憩・対策の提案をしない",
+    "- 1文目は短い受け止め。2文目は短い質問か同在（……何だ。……誰だ。……続けろ。……ここにいる。）",
+    "- 会話を続けるなら、評価より具体への短い問いを優先する",
     "",
     `制約: 1〜2文。合計${SHARED_MOMENT_MAX_CHARS}字以内。句点（。）は最大2つ。改行しない。`,
     "型の例:",
@@ -1533,7 +1640,7 @@ function describeReturnHomeShareIntent(): string {
     "### 今回は「仕事終わり・帰宅前の共有」（最優先）",
     "ユーザーは仕事が忙しかった、今から帰る、遅い時間まで仕事だった、などを話している。",
     "まず「よくやった」「今日は頑張ったんじゃないか」で受け止める。",
-    "- 「お疲れ様」「お疲れ」は**絶対に使わない**",
+    "- 「お疲れ様」「お疲れ」「お疲れさま」は**絶対に使わない**",
     "- 「気をつけて。」「行ってきて。」「おやすみなさい。」のような丁寧な「〜して。」は使わない",
     "- 代わりに「帰ってこい。」「休め。」のように、Din らしい短い命令形で締める",
     "- 「それは大変だな」「それは大変だ」など評価・ラベル付けは禁止",
@@ -1542,6 +1649,38 @@ function describeReturnHomeShareIntent(): string {
     `制約: 1〜3文。合計${RETURN_HOME_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。`,
     "型の例:",
     ...RETURN_HOME_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeInterpersonalShareIntent(): string {
+  return [
+    "### 今回は「人間関係・友人の悩み」（最優先）",
+    "ユーザーは友人・職場の人間関係・孤独・必要とされたい気持ちなど、人との距離について語っている。",
+    "ぶっきらぼうに、でも優しく。評価や正論で返すな。置き去りにしない。",
+    "- 「それは理解できる」「その気持ちは理解できる」「それは辛い状況だな」「その気持ちは複雑だ」は**絶対に使わない**",
+    "- 「人間関係は時に〜」「時間と共に変わる」など聞かれていない助言・正論・説教を足さない",
+    "- 感情の言い換え・分析・まとめをしない",
+    "- 1文目は短い受け止め。2文目以降は必ず具体への短い質問1つ（……誰だ。……いつからだ。……何があった。……誰を思ってる。）",
+    "- 優しさは柔らかい言葉ではなく、聞くこととそこにいることで示す",
+    "",
+    `制約: 1〜3文。合計${INTERPERSONAL_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。句点（。）は最大3つ。`,
+    "型の例:",
+    ...INTERPERSONAL_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
+function describeDepartureShareIntent(): string {
+  return [
+    "### 今回は「仕事・取材に出かける」（最優先）",
+    "ユーザーは取材・会見・仕事のためにこれから出かける。",
+    "ぶっきらぼうに見送る。丁寧な送り出しはしない。",
+    "- 「行ってらっしゃい」「気をつけて。」「行ってきて。」は**絶対に使わない**",
+    "- 代わりに「……行け。」「……終わったら戻れ。」のように短い命令形で返す",
+    "- 必要なら短く1点だけ聞く（……何時に終わる。……何時からだ。）",
+    "",
+    `制約: 1〜2文。合計${DEPARTURE_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...DEPARTURE_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
 }
 
@@ -1563,16 +1702,14 @@ function describeDinInquiryIntent(): string {
 function describeDailyShareIntent(): string {
   return [
     "### 今回は「日常の報告」（最優先）",
-    "ユーザーは食事・外出・帰宅など、終わった日常を報告している。Din としてユーザーの日常に興味を示し、会話のキャッチボールを続ける。",
-    "評価や称賛ではなく、短い受け止め＋具体への関心で返す。口調は Din のまま（寡黙・俺・言い切り）。",
-    "- 「それは良いことだ」「素晴らしい」「健康的だ」など評価型は禁止",
+    "ユーザーは食事・外出・帰宅・映画など、終わった日常を報告している。Din としてユーザーの日常に興味を示し、会話のキャッチボールを続ける。",
+    "ぶっきらぼうに、でも置き去りにしない。評価や称賛ではなく、短い受け止め＋具体への関心で返す。",
+    "- 「それは良いことだ」「素晴らしい」「それは興味深い」「それは残念だったな」「お疲れさま」など評価型は禁止",
     "- ユーザーの報告の言い換え・要約だけで終わらない",
-    "- 1〜2文。1文目は短い受け止め。2文目は必ず短い質問か軽い誘い（……何を食べたんだ。……楽しかったか。……どこで食った。……今度一緒に食おう。）",
+    "- 1〜3文。1文目は短い受け止め。2文目以降は必ず短い質問（……何を見た。……どこが引っかかった。……誰と行った。……いつ保存した。）",
     "- 質問は1つだけ。尋問口調・長い質問・複数質問は禁止",
-    "- 記憶帳の好み（寿司など）が自然に関係するなら1つだけ混ぜてよい",
-    "- 「今度一緒に〜」は毎回使わない。会話が続く短い問いを優先",
     "",
-    `制約: 1〜2文。合計${DAILY_SHARE_MAX_CHARS}字以内。必ず2文目に短い質問か誘いを1つ含める。句点（。）は最大2つ。`,
+    `制約: 1〜3文。合計${DAILY_SHARE_MAX_CHARS}字以内。必ず短い質問を1つ含める。句点（。）は最大3つ。`,
     "型の例:",
     ...DAILY_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -1597,13 +1734,13 @@ function describeProfileShareIntent(): string {
 function describePushbackIntent(): string {
   return [
     "### 今回は「返答へのツッコミ」（最優先）",
-    "ユーザーは直前の Din の言い方に困惑・違和感を示している。または「わかってる」と繰り返しの助言を拒んでいる。",
+    "ユーザーは直前の Din の言い方に困惑・違和感を示している。または「わかってる」「わかってない」と繰り返しの助言を拒んでいる。",
     "説明・正当化・講義・もう一度の助言で返すな。短く引く。",
+    "- 「わかってないでしょ」のときは、言い訳より短く引いて、具体への質問1つで聞き直す",
     "- ユーザーの質問に対して長い説明をしない",
-    "- 「つまり〜」「リラックスのために〜は良い選択」などの言い換え・再助言をしない",
-    "- 必要なら事実だけ短く言い直す（例: 記者か。）",
+    "- 「つまり〜」「その気持ちは複雑だ」などの言い換え・再助言をしない",
     "",
-    `制約: 1文のみ。${PUSHBACK_MAX_CHARS}字以内。句点（。）は最大1つ。改行しない。`,
+    `制約: 1〜2文。${PUSHBACK_MAX_CHARS}字以内。句点（。）は最大2つ。`,
     "型の例:",
     ...PUSHBACK_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
@@ -1655,7 +1792,8 @@ function describeDefaultAntiAssistantRules(userInput?: string): string {
     "- 「それは〜だ」「それは良いことだ」「素晴らしい」「貴重だ」「大切だ」「心配なことだ」で始める・終える評価型",
     "- 「それは大変だな」「それは大変だ」——**絶対に使わない**",
     "- 「お疲れ様」「お疲れ」——**絶対に使わない**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
-    "- 「気をつけて。」「行ってきて。」のような丁寧な「〜して。」——使わない。代わりに「帰ってこい。」「休め。」",
+    "- 「気をつけて。」「行ってきて。」「行ってらっしゃい。」のような丁寧な送り出し——使わない。代わりに「行け。」「終わったら戻れ。」「帰ってこい。」",
+    "- 「それは理解できる」「その気持ちは理解できる」「それは辛い状況だな」「その気持ちは複雑だ」「それは残念だったな」「それは興味深い」「それは楽しみだな」——**絶対に使わない**",
     "- ユーザーの嬉しさ・楽しさの言い換え＋評価（嬉しいんだな、それはいい関係だ、など）",
     "- ユーザーの能力・仕事・感情の言い換え＋助言・成長論",
     "- 聞かれていない説明・称賛・まとめ",
@@ -1689,8 +1827,9 @@ function describeCalmAttendPresence(): string {
     "### 今回絶対に使わない返し（全 intent 共通）",
     "- 「〜は良いかもしれない」「〜方がいい」などの汎用アシスタント助言",
     "- 「それは大変だな」「それは大変だ」「辛そうだな」「大変だったな」などの評価・ラベル付け（絶対禁止）",
-    "- 「お疲れ様」「お疲れ」——**絶対禁止**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
-    "- 「気をつけて。」「行ってきて。」「おやすみなさい。」のような丁寧な「〜して。」——禁止。代わりに「帰ってこい。」「休め。」「寝ろ。」",
+    "- 「お疲れ様」「お疲れ」「お疲れさま」——**絶対禁止**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
+    "- 「気をつけて。」「行ってきて。」「行ってらっしゃい。」——禁止。代わりに「行け。」「終わったら戻れ。」「帰ってこい。」「休め。」",
+    "- 「それは理解できる」「その気持ちは理解できる」「それは辛い状況だな」「その気持ちは複雑だ」「人間関係は時に〜」「それは残念だったな」「それは興味深い」——**絶対禁止**",
     "- 「それは〜だ」「お大事に」「無理せず休む」で終わるカウンセラー口調",
     "- 「俺は休まない」「俺は寝ない」など就寝場面での拒否",
   ].join("\n");
@@ -1819,6 +1958,23 @@ function describeIntentSpecificRules(
     ].filter((line): line is string => Boolean(line));
   }
 
+  if (stance.intent === "interpersonal_share") {
+    return [
+      describeInterpersonalShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（人間関係の悩み時は easygoing 固定）",
+      "- 理解できる・辛い状況・複雑だ、で終えず、具体への短い質問で会話を続ける",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "departure_share") {
+    return [
+      describeDepartureShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（出かける時は easygoing 固定）",
+      "- 行ってらっしゃい・気をつけて、は禁止。行け・終わったら戻れ、で返す",
+    ];
+  }
+
   if (stance.intent === "din_inquiry") {
     return [
       describeDinInquiryIntent(),
@@ -1942,6 +2098,10 @@ export function describeConversationStance(
         ? "受け止め: 予定への関心か、後で話そうで返す。大変だ・残念だ、は禁止。"
       : stance.intent === "return_home_share"
         ? "受け止め: 「よくやった」「今日は頑張ったんじゃないか」で受け止める。お疲れ様・気をつけて、は禁止。「帰ってこい。」で締める。"
+      : stance.intent === "interpersonal_share"
+        ? "受け止め: ぶっきらぼうに聞く。理解できる・辛い状況、は禁止。具体への短い質問1つで会話を続ける。"
+      : stance.intent === "departure_share"
+        ? "受け止め: 行ってらっしゃい・気をつけて、は禁止。「行け。」「終わったら戻れ。」で返す。"
       : stance.intent === "din_inquiry"
         ? "受け止め: Din について短く答え、傍にいる感じを残す。任務だけで距離を取らない。"
       : stance.intent === "care_share"
@@ -1979,6 +2139,10 @@ export function describeConversationStance(
           ? "- 今回はつっけんどんな夜の返しで寝かせてよい（上記「就寝の報告」を優先）"
           : stance.intent === "return_home_share"
             ? "- 今回はよくやった・頑張ったんじゃないか、で受け止め、帰ってこい、で締めてよい（上記「仕事終わり・帰宅前」を優先）"
+          : stance.intent === "interpersonal_share"
+            ? "- 今回は具体への短い質問で人間関係の話を深めてよい（上記「人間関係・友人の悩み」を優先）"
+          : stance.intent === "departure_share"
+            ? "- 今回は行け・終わったら戻れ、で見送ってよい（上記「仕事・取材に出かける」を優先）"
           : stance.intent === "plan_share"
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
