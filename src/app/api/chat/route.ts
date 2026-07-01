@@ -5,6 +5,7 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import {
+  isEmotionallyLoadedInput,
   maxTokensForIntent,
   resolveConversationStance,
 } from "@/lib/din/conversation-stance";
@@ -129,6 +130,16 @@ export async function POST(request: Request) {
 
     const shortReplyMaxTokens = maxTokensForIntent(conversationStance.intent);
 
+    const defaultTemperature =
+      conversationStance.intent === "default" &&
+      isEmotionallyLoadedInput(latestUserInput)
+        ? 0.55
+        : conversationStance.register === "easygoing"
+          ? 0.72
+          : conversationStance.register === "quiet"
+            ? 0.55
+            : 0.6;
+
     const completion = await openai.chat.completions.create({
       model,
       messages: [
@@ -187,11 +198,7 @@ export async function POST(request: Request) {
                 ? 0.55
                 : modelMode === "research"
                   ? 0.52
-                  : conversationStance.register === "easygoing"
-                    ? 0.72
-                    : conversationStance.register === "quiet"
-                      ? 0.55
-                      : 0.6,
+                  : defaultTemperature,
       ...(shortReplyMaxTokens !== undefined
         ? { max_tokens: shortReplyMaxTokens }
         : {}),
