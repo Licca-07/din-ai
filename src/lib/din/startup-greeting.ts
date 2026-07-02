@@ -5,8 +5,10 @@ import {
   type ProactiveOpener,
 } from "@/lib/din/proactive-opener";
 import {
+  EARLY_MORNING_WAKE_OPENERS,
   getBusyCheckGreeting,
   getLastVisitIso,
+  isEarlyMorningWakeWindow,
   maxIsoTimestamp,
 } from "@/lib/din/session-context";
 import type { DinMemory } from "@/types/din-memory";
@@ -129,6 +131,15 @@ function buildExcludeSeeds(memory: DinMemory): Set<string> {
   return exclude;
 }
 
+function resolveEarlyMorningWakeGreeting(
+  exclude: Set<string>,
+): StartupGreetingDecision {
+  const message =
+    pickStartupFixedMessage(EARLY_MORNING_WAKE_OPENERS, exclude) ??
+    EARLY_MORNING_WAKE_OPENERS[0];
+  return { mode: "fixed", band: "short", message };
+}
+
 function resolveShortBandGreeting(
   memory: DinMemory,
   exclude: Set<string>,
@@ -209,14 +220,18 @@ export function resolveStartupGreeting(
 ): StartupGreetingDecision | null {
   if (memory.chatHistory.length === 0) return null;
 
+  const exclude = buildExcludeSeeds(memory);
+
+  if (isEarlyMorningWakeWindow(now)) {
+    return resolveEarlyMorningWakeGreeting(exclude);
+  }
+
   const elapsedMs = getElapsedMsSinceLastOpen(memory, now);
   const band = getStartupGreetingBand(elapsedMs);
 
   if (band === "silent") {
     return { mode: "none", band: "silent" };
   }
-
-  const exclude = buildExcludeSeeds(memory);
 
   if (band === "short") {
     return resolveShortBandGreeting(memory, exclude, now);

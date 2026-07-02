@@ -1,6 +1,8 @@
 import {
   buildSessionContext,
+  EARLY_MORNING_WAKE_OPENERS,
   getBusyCheckGreeting,
+  isEarlyMorningWakeWindow,
   type DinAbsence,
   type DinSessionContext,
 } from "@/lib/din/session-context";
@@ -97,6 +99,16 @@ function selectSessionSeed(
   excludeSeeds: Set<string>,
   now = new Date(),
 ): string {
+  if (isEarlyMorningWakeWindow(now)) {
+    const filtered = EARLY_MORNING_WAKE_OPENERS.filter(
+      (seed) => !excludeSeeds.has(normalizeSeed(seed)),
+    );
+    return (
+      pickRandom(filtered.length > 0 ? [...filtered] : [...EARLY_MORNING_WAKE_OPENERS]) ??
+      EARLY_MORNING_WAKE_OPENERS[0]
+    );
+  }
+
   const pool = [...SESSION_OPENERS[context.absence]];
   if (context.absence === "one_day") {
     pool.unshift(getBusyCheckGreeting(now));

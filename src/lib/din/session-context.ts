@@ -67,6 +67,21 @@ export function isPastDayReflectionTime(date = new Date()): boolean {
   return getJstHour(date) >= 20;
 }
 
+/** 2:00〜5:59（JST）の早朝帯。夜中に目が覚えたユーザー向け */
+export function isEarlyMorningWakeWindow(date = new Date()): boolean {
+  const hour = getJstHour(date);
+  return hour >= 2 && hour < 6;
+}
+
+export const EARLY_MORNING_WAKE_OPENERS = [
+  "目が覚めたのか。",
+  "起きたのか。",
+  "眠れなかったのか。",
+  "目が覚めたか。",
+  "夜中に目が覚めたのか。",
+  "まだ起きていたのか。",
+] as const;
+
 export function getBusyCheckGreeting(date = new Date()): string {
   return isPastDayReflectionTime(date)
     ? "忙しかったのか。"
