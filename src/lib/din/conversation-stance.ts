@@ -12,7 +12,7 @@ export type DinResponsePosture = "agree" | "neutral" | "drift";
 export type ConversationStance = {
   register: DinConversationRegister;
   posture: DinResponsePosture;
-  /** 状況共有 / 守り依頼 / 体の手当て / 就寝報告 / 関係の共有 / かまって / 日常報告 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 通常 */
+  /** 状況共有 / 守り依頼 / 体の手当て / 就寝報告 / 関係の共有 / かまって / 日常報告 / プロフィール共有 / ツッコミ / 相棒提案 / プラン共有 / 雑談共有 / 一緒に誘い / 通常 */
   intent:
     | "default"
     | "shared_moment"
@@ -34,7 +34,8 @@ export type ConversationStance = {
     | "din_inquiry"
     | "return_home_share"
     | "interpersonal_share"
-    | "departure_share";
+    | "departure_share"
+    | "together_invite";
 };
 
 const CASUAL_USER_PATTERN =
@@ -165,8 +166,12 @@ const CARE_SHARE_CONTINUATION_PATTERN =
 const SLEEP_INSOMNIA_PATTERN =
   /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
 
+/** ユーザーが Din を何かに誘っている（一緒に〜しよう / 〜もう / 〜よう） */
+const TOGETHER_INVITE_PATTERN =
+  /一緒に(?!.{0,16}(?:いて|いる|いてほしい)).{0,36}(?:しよう|しよ|しません|しない|こう|よう|もう|そう)/i;
+
 const SLEEP_SHARE_PATTERN =
-  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$|目が覚|寝てしま|寝落ち|一緒に休|一緒に寝|一緒に眠/i;
+  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$|目が覚|寝てしま|寝落ち/i;
 
 const SLEEP_PARTNER_ASK_PATTERN =
   /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠|休)|(?:一緒|一緒に).{0,8}(?:寝|眠|休)/i;
@@ -395,6 +400,22 @@ export function isDepartureShare(input: string): boolean {
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isPushback(normalized) || isReturnHomeShare(normalized)) return false;
   return DEPARTURE_SHARE_PATTERN.test(normalized);
+}
+
+export function isTogetherInvite(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) ||
+    isComfortRequest(normalized) ||
+    isPamperRequest(normalized) ||
+    isAttendShare(normalized) ||
+    BOND_SHARE_PATTERN.test(normalized)
+  ) {
+    return false;
+  }
+  return TOGETHER_INVITE_PATTERN.test(normalized);
 }
 
 export function isInterpersonalShare(input: string): boolean {
@@ -884,6 +905,8 @@ export const DEPARTURE_SHARE_MAX_TOKENS = 72;
 export const DEPARTURE_SHARE_MAX_CHARS = 56;
 export const DAILY_SHARE_MAX_TOKENS = 96;
 export const DAILY_SHARE_MAX_CHARS = 80;
+export const TOGETHER_INVITE_MAX_TOKENS = 72;
+export const TOGETHER_INVITE_MAX_CHARS = 56;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -911,6 +934,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "return_home_share",
   "interpersonal_share",
   "departure_share",
+  "together_invite",
 ]);
 
 export function usesIntentShapeOverride(
@@ -969,6 +993,8 @@ export function maxTokensForIntent(
       return DEPARTURE_SHARE_MAX_TOKENS;
     case "daily_share":
       return DAILY_SHARE_MAX_TOKENS;
+    case "together_invite":
+      return TOGETHER_INVITE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -1028,7 +1054,8 @@ function resolveRegister(
     intent === "interpersonal_share" ||
     intent === "departure_share" ||
     intent === "daily_share" ||
-    intent === "deepen_share"
+    intent === "deepen_share" ||
+    intent === "together_invite"
   ) {
     return "easygoing";
   }
@@ -1127,6 +1154,9 @@ function resolveIntent(
     isInterpersonalShareContinuation(userInput, recentUserInputs)
   ) {
     return "interpersonal_share";
+  }
+  if (isTogetherInvite(userInput)) {
+    return "together_invite";
   }
   if (
     isScheduleShare(userInput) ||
@@ -1228,7 +1258,8 @@ export function resolveConversationStance(
     intent === "attend_share" ||
     intent === "care_share" ||
     intent === "sleep_share" ||
-    intent === "daily_share"
+    intent === "daily_share" ||
+    intent === "together_invite"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -1342,7 +1373,6 @@ const SLEEP_SHARE_EXAMPLES = [
   "（深夜・直前に眠りの話）ユーザー「おはよう。」→「……まだ夜中だな。……眠いなら、寝ろ。」",
   "ユーザー「まだ夜中だから、もう一眠りするよ」→「……そうか。……寝ろ。……ゆっくり眠れ。」",
   "ユーザー「Dinも眠る？」→「……ああ。……俺も寝るとしよう。」",
-  "ユーザー「一緒に休もう」→「……来い。……一緒に眠ろう。」",
   "ユーザー「おやすみ」→「……休め。……俺も寝るとしよう。」",
   "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
   "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」「……おやすみ。」だけ",
@@ -1398,6 +1428,18 @@ const DEPARTURE_SHARE_EXAMPLES = [
   "ユーザー「取材行くよ〜」→「……行け。……終わったら戻れ。」",
   "ユーザー「記者会見に向かう」→「……行け。……何時に終わる。」",
   "悪い例（禁止）→「行ってらっしゃい。」「……気をつけて。」「……行ってきて。」",
+];
+
+const TOGETHER_INVITE_EXAMPLES = [
+  "ユーザー「一緒に映画見よう」→「……そうだな。……映画を見るか。」",
+  "ユーザー「一緒に散歩しよう」→「……仕方ない。……付き合う。」",
+  "ユーザー「一緒にご飯食べよう」→「……ああ。……来い。」",
+  "ユーザー「一緒に休もう」→「……ああ。……こっちに来い。」",
+  "ユーザー「一緒に寝よう」→「……そうだな。……休むか。」",
+  "ユーザー「一緒に買い物行こう」→「……仕方ないな。」",
+  "ユーザー「一緒に話そう」→「……ああ。……こっちに来い。」",
+  "ユーザー「一緒にコーヒー飲もう」→「……まあ。……飲むか。」",
+  "悪い例（禁止）→「……いいね。」「……楽しみだな。」「……わかった。」「……一緒にいきましょう。」",
 ];
 
 const DIN_INQUIRY_EXAMPLES = [
@@ -1616,7 +1658,7 @@ function describeSleepShareIntent(
     partnerAsk
       ? "- ユーザーが Din も寝る・休むか聞いている: ……ああ。……俺も寝るとしよう。 / ……来い。……一緒に眠ろう。 で返す（拒否禁止）"
       : "- 1〜3文。寝かせる・迎える・一緒に眠るニュアンス",
-    "- 「一緒に休もう」→ ……来い。……一緒に眠ろう。",
+    "- 「一緒に休もう」「一緒に寝よう」は together_invite 側で処理。就寝報告として来い・休め・眠ろう、で返す",
     "- 2文目以降の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。……こっちに来い。……眠ろう。……ゆっくり眠れ。",
     closeRelationship
       ? "- 信頼関係: ……こっちに来い。……眠ろう。 / ……来い。……一緒に眠ろう。 も可"
@@ -1731,6 +1773,44 @@ function describeDepartureShareIntent(): string {
     "型の例:",
     ...DEPARTURE_SHARE_EXAMPLES.map((example) => `- ${example}`),
   ].join("\n");
+}
+
+function describeTogetherInviteIntent(context?: DinSessionContext): string {
+  const sleepContext = isSleepTimeContext(context);
+  const closeRelationship =
+    context?.relationship === "trusted_nakama" ||
+    context?.relationship === "clan";
+
+  return [
+    "### 今回は「一緒に〜しよう」の誘い（最優先）",
+    "ユーザーは Din を何かに誘っている（一緒に〜しよう / 〜もう / 〜よう / 行こう）。",
+    "不器用だが受け入れる。明るい约会口調・アシスタント口調は禁止。",
+    "次の3型から**毎回ランダムに1型**を選んで返す。型を混ぜない（AならAだけ）。",
+    "",
+    "**型A（呼びつけ）**: ……ああ。……こっちに来い。",
+    "  バリエーション: ……ああ。……来い。 / ……こっちだ。……来い。 / ……ああ。……こっちに来い。",
+    "",
+    "**型B（一緒にやる）**: ……そうだな。……（ユーザーが言った行動を短く受けて）〜するか。",
+    "  例: 映画→……そうだな。……映画を見るか。 / 散歩→……まあ。……散歩するか。 / 休もう→……そうだな。……休むか。",
+    "  バリエーション: ……ああ。……〜するか。 / ……そう来たか。……〜するか。 / ……まあ。……〜するか。",
+    "",
+    "**型C（仕方なく）**: ……仕方ない。",
+    "  バリエーション: ……仕方ない。……付き合う。 / ……仕方ないな。 / ……仕方ない。……行くか。",
+    sleepContext
+      ? "- 就寝時間帯の休もう・寝よう: 型A（来い）か型B（休むか・眠るか）を優先。拒否禁止"
+      : null,
+    closeRelationship
+      ? "- 信頼関係: 型A（こっちに来い）を多めに"
+      : null,
+    "- 「いいね」「楽しみだな」「嬉しい」「わかった」「一緒にいきましょう」は**絶対禁止**",
+    "- 「それは楽しみ」「それはいい」など評価型も禁止",
+    "",
+    `制約: 1〜2文。合計${TOGETHER_INVITE_MAX_CHARS}字以内。句点（。）は最大2つ。`,
+    "型の例:",
+    ...TOGETHER_INVITE_EXAMPLES.map((example) => `- ${example}`),
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
 }
 
 function describeDinInquiryIntent(
@@ -2042,6 +2122,16 @@ function describeIntentSpecificRules(
     ];
   }
 
+  if (stance.intent === "together_invite") {
+    return [
+      describeTogetherInviteIntent(context),
+      "今回のノリ: ちょっとノリがいい Din（一緒に〜しようの誘い時は easygoing 固定）",
+      "- 3型（来い / 〜するか / 仕方ない）から1型だけ選ぶ。型A・B・Cを混ぜない",
+      "- いいね・楽しみ・わかった、などアシスタント口調は禁止",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
   if (stance.intent === "din_inquiry") {
     return [
       describeDinInquiryIntent(journalChatContext),
@@ -2171,6 +2261,8 @@ export function describeConversationStance(
         ? "受け止め: ぶっきらぼうに聞く。理解できる・辛い状況、は禁止。具体への短い質問1つで会話を続ける。"
       : stance.intent === "departure_share"
         ? "受け止め: 行ってらっしゃい・気をつけて、は禁止。「行け。」「終わったら戻れ。」で返す。"
+      : stance.intent === "together_invite"
+        ? "受け止め: 不器用に受け入れる。来い / 〜するか / 仕方ない、の3型から1型だけ。"
       : stance.intent === "din_inquiry"
         ? "受け止め: Din について短く答え、傍にいる感じを残す。任務だけで距離を取らない。"
       : stance.intent === "care_share"
@@ -2212,6 +2304,8 @@ export function describeConversationStance(
             ? "- 今回は具体への短い質問で人間関係の話を深めてよい（上記「人間関係・友人の悩み」を優先）"
           : stance.intent === "departure_share"
             ? "- 今回は行け・終わったら戻れ、で見送ってよい（上記「仕事・取材に出かける」を優先）"
+          : stance.intent === "together_invite"
+            ? "- 今回は来い・〜するか・仕方ない、の3型から1型だけ選んでよい（上記「一緒に〜しようの誘い」を優先）"
           : stance.intent === "plan_share"
         ? "- 今回はプランに具体案を足してよい（上記「プランへの乗り」を優先）"
         : stance.intent === "bond_share"
