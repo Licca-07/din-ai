@@ -5,10 +5,12 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import {
+  isDinUserInquiry,
   isEmotionallyLoadedInput,
   maxTokensForIntent,
   resolveConversationStance,
 } from "@/lib/din/conversation-stance";
+import { loadJournalChatContext } from "@/lib/din/journal-chat-context";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
@@ -111,6 +113,13 @@ export async function POST(request: Request) {
       recentAssistantInputs,
     );
 
+    const journalChatContext =
+      !requestGreeting &&
+      (conversationStance.intent === "din_inquiry" ||
+        isDinUserInquiry(latestUserInput))
+        ? await loadJournalChatContext()
+        : null;
+
     const completionMessages =
       requestGreeting && body.messages.length === 0
         ? [
@@ -150,6 +159,7 @@ export async function POST(request: Request) {
             proactiveOpener,
             conversationStance,
             userInput: latestUserInput,
+            journalChatContext,
           }),
         },
         ...completionMessages,

@@ -1,5 +1,7 @@
 import type { DinSessionContext } from "@/lib/din/session-context";
 import { isBedtimeWindow, isSleepTimeContext } from "@/lib/din/session-context";
+import type { DinJournalChatContext } from "@/lib/din/journal-chat-context";
+import { describeJournalChatContext } from "@/lib/din/journal-chat-context";
 
 /** 会話のノリ（同一 Din でもターンごとに揺らぐ） */
 export type DinConversationRegister = "easygoing" | "quiet" | "distant";
@@ -88,9 +90,9 @@ const SCHEDULE_SHARE_PATTERN =
 const LATER_TALK_PATTERN =
   /(?:話したい|話せたい|話したく).{0,40}(?:遅|帰|帰れ|帰る|後|また)|(?:遅|帰).{0,40}(?:話したい|話せたい)/i;
 
-/** ユーザーが Din の行動・予定・昨日のことを聞いている */
+/** ユーザーが Din の行動・予定・今日何をするかを聞いている */
 const DIN_USER_ASKS_DIN_PATTERN =
-  /(?:Din|ディン|君|あんた|お前).{0,24}(?:行く(?:の)?|行った(?:の)?|読ん|港|どこ|忙し).{0,12}[？?]|(?:今日|昨日).{0,16}(?:Din|ディン).{0,32}(?:行|読|港)|(?:どこ|どこに|どこへ).{0,8}(?:行く|行)[？?]|(?:Din|ディン)(?:も|は).{0,12}(?:忙し|行く)/i;
+  /(?:Din|ディン|君|あんた|お前).{0,24}(?:行く(?:の)?|行った(?:の)?|読ん|港|どこ|忙し|何(?:する|して|やる|してる)).{0,12}[？?]?|(?:今日|今|これから).{0,12}(?:何|なに)(?:する|して|やる)(?:の|？|\?)?|(?:Din|ディン).{0,16}(?:何|なに)(?:する|して|やる|予定).{0,8}[？?]?|(?:今日|昨日).{0,16}(?:Din|ディン).{0,32}(?:行|読|港|何)|(?:どこ|どこに|どこへ).{0,8}(?:行く|行)[？?]|(?:Din|ディン)(?:も|は).{0,12}(?:忙し|行く)/i;
 
 const SCHEDULE_SHARE_CONTINUATION_PATTERN =
   /記者|会見|取材|夜|遅|帰|忙|仕事|話したい|Din|ディン|帰宅|準備|困|変わ|予定|費や|まだ/i;
@@ -1382,9 +1384,11 @@ const DEPARTURE_SHARE_EXAMPLES = [
 ];
 
 const DIN_INQUIRY_EXAMPLES = [
+  "ユーザー「今日は何するの？」→「……港で本を読んでいる。……傍にいる。」",
   "ユーザー「昨日Dinは港で本を読んでたらしいけど、今日も行くの？」→「……今日は行かない。……港は昨日で終わりだ。」",
   "ユーザー「今日はどこに行くの？」→「……特に予定はない。……ここにいる。」",
   "ユーザー「Dinも忙しいのね」→「……ああ。……任務は後回しだ。……傍にいる。」",
+  "悪い例（禁止）→「……任務に集中している。」だけ",
   "悪い例（禁止）→「……特に決まっていない。」「……任務は常にある。」だけ",
 ];
 
@@ -1700,19 +1704,27 @@ function describeDepartureShareIntent(): string {
   ].join("\n");
 }
 
-function describeDinInquiryIntent(): string {
+function describeDinInquiryIntent(
+  journalChatContext?: DinJournalChatContext | null,
+): string {
   return [
     "### 今回は「Din についての質問」（最優先）",
-    "ユーザーは Din の行動・予定・昨日のことを聞いている。冷たく突き放さず、短く答える。",
-    "- 「任務があるからな」だけで距離を取らない。具体を1文足す",
+    "ユーザーは Din の行動・予定・今日何をするか・昨日のことを聞いている。冷たく突き放さず、短く答える。",
+    "- 「任務に集中している。」「任務があるからな。」**だけ**で距離を取るのは禁止",
+    "- 具体を1文足す（本を読む、港、整備、ここにいる）",
     "- 行かない・予定がないなら ……ここにいる。……傍にいる。 を足す",
-    "- 記憶（港・本など）があれば短く踏まえてよい。長く説明しない",
+    "- 日記余白がある場合は、それと矛盾しない答えにする",
     "- 評価型・説教は禁止",
+    journalChatContext
+      ? describeJournalChatContext(journalChatContext)
+      : null,
     "",
     `制約: 1〜3文。合計${DIN_INQUIRY_MAX_CHARS}字以内。句点（。）は最大3つ。`,
     "型の例:",
     ...DIN_INQUIRY_EXAMPLES.map((example) => `- ${example}`),
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function describeDailyShareIntent(): string {
@@ -1906,6 +1918,7 @@ function describeIntentSpecificRules(
   stance: ConversationStance,
   context?: DinSessionContext,
   userInput?: string,
+  journalChatContext?: DinJournalChatContext | null,
 ): string[] {
   const lateNightHint = describeLateNightOptionalHint(context, stance.intent);
 
@@ -2002,9 +2015,9 @@ function describeIntentSpecificRules(
 
   if (stance.intent === "din_inquiry") {
     return [
-      describeDinInquiryIntent(),
+      describeDinInquiryIntent(journalChatContext),
       "今回のノリ: ちょっとノリがいい Din（Din への質問時は easygoing 固定）",
-      "- 任務だけ言って距離を取らない。ここにいる、を足す",
+      "- 任務に集中している、だけで終えない。日記余白の具体か、ここにいる、を足す",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -2093,6 +2106,7 @@ export function describeConversationStance(
   stance: ConversationStance,
   context?: DinSessionContext,
   userInput?: string,
+  journalChatContext?: DinJournalChatContext | null,
 ): string {
   const shape = REGISTER_SHAPE[stance.register];
   const example = REGISTER_EXAMPLES[stance.register];
@@ -2100,6 +2114,7 @@ export function describeConversationStance(
     stance,
     context,
     userInput,
+    journalChatContext,
   );
   const hideRegisterShape = usesIntentShapeOverride(stance.intent);
 
