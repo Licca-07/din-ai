@@ -115,9 +115,9 @@ const INTERPERSONAL_SHARE_PATTERN =
 const INTERPERSONAL_SHARE_CONTINUATION_PATTERN =
   /友|人間|関係|連絡|必要|求め|悲|疲|大人|時間|共有|1番|割り切|無視|気持ち|複雑|空虚|虚し|飲み会|映画|会社|うん|ね[。]?$/i;
 
-/** 朝の二度寝・昼寝など、日中の追加休息 */
+/** 朝の二度寝・昼寝・深夜の再就寝など、追加休息 */
 const NAP_SHARE_PATTERN =
-  /二度寝|寝直し|もう一回寝|もう少し.{0,8}(?:休|寝)|あと.{0,8}(?:休|寝)|休もうかな|昼寝し|昼寝する|寝ようかな/i;
+  /二度寝|寝直し|もう一回寝|もう一眠り|一眠り|もう少し.{0,8}(?:休|寝)|あと.{0,8}(?:休|寝)|休もうかな|昼寝し|昼寝する|寝ようかな|夜中.{0,12}(?:寝|休|眠)/i;
 
 const DAILY_SHARE_CONTINUATION_PATTERN =
   /寿司|ラーメン|パスタ|カレー|うどん|そば|ピザ|丼|弁当|牛|鶏|魚|野菜|甘|辛|うま|美味|おい|店|家|自炊|作|たのし|楽し|一緒|今度|結構|普通|まあ|満足|お腹|パン|ごはん|米|スーパ|コンビニ|誰|一人|友|同僚|家族|映画|マイケル|ジャクソン|父親|音楽|映像|伝記|辛い|レタス|冷蔵庫|保存|捨て|白っぽ|濁|観|見|空虚|虚し|飲み会|会社|痛/i;
@@ -166,13 +166,13 @@ const SLEEP_INSOMNIA_PATTERN =
   /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
 
 const SLEEP_SHARE_PATTERN =
-  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$/i;
+  /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$|目が覚|寝てしま|寝落ち|一緒に休|一緒に寝|一緒に眠/i;
 
 const SLEEP_PARTNER_ASK_PATTERN =
-  /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠)|(?:一緒|一緒に).{0,8}(?:寝|眠)/i;
+  /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠|休)|(?:一緒|一緒に).{0,8}(?:寝|眠|休)/i;
 
 const SLEEP_SHARE_CONTINUATION_PATTERN =
-  /うん|少し|結構|まあ|今日|疲|仕事|取材|忙|運動|眠|寝|おやすみ|Din|ディン|一緒/i;
+  /うん|少し|結構|まあ|今日|疲|仕事|取材|忙|運動|眠|寝|おやすみ|Din|ディン|一緒|一眠り|夜中|休もう|覚め|おはよ|まだ夜/i;
 
 /** ユーザーが Din との時間・関係そのものを好意的に語っている */
 const BOND_SHARE_PATTERN =
@@ -315,11 +315,11 @@ function isAttendShareContinuation(
   return recentAttend && ATTEND_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
-export function isNapShare(input: string): boolean {
+export function isNapShare(input: string, context?: DinSessionContext): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
-  if (isSleepShare(normalized)) return false;
+  if (isSleepShare(normalized, context)) return false;
   if (isPamperRequest(normalized)) return false;
   return NAP_SHARE_PATTERN.test(normalized);
 }
@@ -523,8 +523,11 @@ export function isSleepShare(
   return SLEEP_SHARE_PATTERN.test(normalized);
 }
 
-export function isSleepPartnerAsk(input: string): boolean {
-  if (!isBedtimeWindow()) return false;
+export function isSleepPartnerAsk(
+  input: string,
+  context?: DinSessionContext,
+): boolean {
+  if (!isSleepTimeContext(context)) return false;
   const normalized = input.trim();
   if (!normalized) return false;
   return SLEEP_PARTNER_ASK_PATTERN.test(normalized);
@@ -552,12 +555,23 @@ function isSleepShareContinuation(
     .slice(-4, -1)
     .some(
       (input) =>
-        isSleepShare(input) ||
+        isSleepShare(input, context) ||
+        isNapShare(input, context) ||
         SLEEP_SHARE_PATTERN.test(input.trim()) ||
+        NAP_SHARE_PATTERN.test(input.trim()) ||
         SLEEP_PARTNER_ASK_PATTERN.test(input.trim()),
     );
 
-  if (isSleepPartnerAsk(normalized)) return true;
+  if (isSleepPartnerAsk(normalized, context)) return true;
+
+  if (
+    context?.timeBand === "late_night" &&
+    recentSleep &&
+    /^おはよ/u.test(normalized)
+  ) {
+    return true;
+  }
+
   return recentSleep && SLEEP_SHARE_CONTINUATION_PATTERN.test(normalized);
 }
 
@@ -1094,7 +1108,7 @@ function resolveIntent(
 ): ConversationStance["intent"] {
   if (isPushback(userInput)) return "pushback";
   if (isPamperRequest(userInput)) return "pamper_request";
-  if (isNapShare(userInput)) return "nap_share";
+  if (isNapShare(userInput, context)) return "nap_share";
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
@@ -1324,13 +1338,15 @@ const SLEEP_SHARE_EXAMPLES = [
   "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
   "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
   "ユーザー「眠くなってきた」→「……そうか。……休め。……ゆっくり眠れ。」",
-  "ユーザー「眠くなってきた」→「……もう寝る時間だ。……こっちに来い。……眠ろう。」",
-  "ユーザー「眠い」→「……こっちに来い。……眠ろう。」",
-  "ユーザー「もう眠くなってきた、運動したからかな…」→「……そうか。……今日は疲れたか。」",
-  "ユーザー「Dinももう寝る？」→「……ああ。……俺も寝るとしよう。」",
-  "ユーザー「おやすみ」→「……今日もよく働いたな。……おやすみ。」",
+  "ユーザー「19時半に寝てしまい、今目が覚めた」→「……早いな。……まだ夜中だ。……もう一眠りするなら、休め。」",
+  "（深夜・直前に眠りの話）ユーザー「おはよう。」→「……まだ夜中だな。……眠いなら、寝ろ。」",
+  "ユーザー「まだ夜中だから、もう一眠りするよ」→「……そうか。……寝ろ。……ゆっくり眠れ。」",
+  "ユーザー「Dinも眠る？」→「……ああ。……俺も寝るとしよう。」",
+  "ユーザー「一緒に休もう」→「……来い。……一緒に眠ろう。」",
+  "ユーザー「おやすみ」→「……休め。……俺も寝るとしよう。」",
   "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
   "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」「……おやすみ。」だけ",
+  "悪い例（禁止）→「……それがいいかもしれない。」「……よく寝たようだな。」（深夜の目覚め時）",
 ];
 
 const PAMPER_REQUEST_EXAMPLES = [
@@ -1345,8 +1361,9 @@ const PAMPER_REQUEST_EXAMPLES = [
 const NAP_SHARE_EXAMPLES = [
   "ユーザー「二度寝しようかな」→「……寝ろ。……俺が見張る。」",
   "ユーザー「もう少し寝ようかな」→「……そうか。……休め。……ゆっくり眠れ。」",
+  "ユーザー「まだ夜中だから、もう一眠りするよ」→「……そうか。……寝ろ。……ゆっくり眠れ。」",
   "ユーザー「今日は仕事なんだけど、もう少しだけ休もうかな」→「……そうか。……少し休め。……起きる時間になったら言え。」",
-  "悪い例（禁止）→「……それも悪くないかもしれない。」",
+  "悪い例（禁止）→「……それも悪くないかもしれない。」「……それがいいかもしれない。」",
 ];
 
 const SCHEDULE_SHARE_EXAMPLES = [
@@ -1573,7 +1590,8 @@ function describeSleepShareIntent(
     context?.relationship === "trusted_nakama" ||
     context?.relationship === "clan";
   const partnerAsk =
-    userInput !== undefined && isSleepPartnerAsk(userInput);
+    userInput !== undefined && isSleepPartnerAsk(userInput, context);
+  const lateNight = context?.timeBand === "late_night";
 
   const shortSleepiness =
     userInput !== undefined &&
@@ -1581,20 +1599,24 @@ function describeSleepShareIntent(
     /眠|寝/.test(userInput);
 
   return [
-    "### 今回は「就寝の報告」（21時以降・最優先）",
-    "ユーザーは寝る・眠い・おやすみを告げている。つっけんどんな彼氏寄りの、短い夜の返し。",
+    "### 今回は「就寝・休息の共有」（21時以降・深夜・最優先）",
+    "ユーザーは寝る・眠い・おやすみ・深夜の目覚め・もう一眠り・一緒に休もう、を告げている。つっけんどんな彼氏寄りの、短い夜の返し。",
     "Core Instruction の「距離を残す」「即時同意禁止」より、今回の就寝返しを最優先する。拒否で距離を取るな。",
+    lateNight
+      ? "- **深夜帯**: 朝の挨拶テンプレ（おはよう、よく寝たようだな）は使わない。……まだ夜中だな。……寝ろ。 系で返す"
+      : null,
     "優しいカウンセラー口調・ wellness 口調は禁止。明るすぎない。Din の寡黙さと「俺」口調は保つ。",
-    "- 「お大事に」「良い睡眠を」「無理せず休む」「無理せず休むのも良い」などは絶対禁止",
-    "- 「俺は休まない」「俺は寝ない」「休まない」などの拒否・距離取りは絶対禁止",
+    "- 「お大事に」「良い睡眠を」「無理せず休む」「それがいいかもしれない」などは**絶対禁止**",
+    "- 「俺は休まない」「俺は寝ない」「休まない」などの拒否・距離取りは**絶対禁止**",
     "- 「辛そう」「大変だ」などの評価・ラベル付けは禁止",
-    "- 「……おやすみ。」だけ・1文だけで終えるのは絶対禁止。必ず甘やかし（休め、ゆっくり眠れ、こっちに来い、など）を先に入れる",
+    "- 「……おやすみ。」だけ・1文だけで終えるのは**絶対禁止**。必ず甘やかし（休め、ゆっくり眠れ、こっちに来い、など）を先に入れる",
     shortSleepiness
       ? "- ユーザーは短く眠気だけ伝えている: 2〜3文で甘やかして寝かせる（……そうか。……休め。……ゆっくり眠れ。）"
       : null,
     partnerAsk
-      ? "- ユーザーが Din も寝るか聞いている: ……ああ。……俺も寝るとしよう。 / ……来い。……一緒に眠ろう。 で返す"
+      ? "- ユーザーが Din も寝る・休むか聞いている: ……ああ。……俺も寝るとしよう。 / ……来い。……一緒に眠ろう。 で返す（拒否禁止）"
       : "- 1〜3文。寝かせる・迎える・一緒に眠るニュアンス",
+    "- 「一緒に休もう」→ ……来い。……一緒に眠ろう。",
     "- 2文目以降の例: ……今日は疲れたか。……俺も寝るとしよう。……休め。……こっちに来い。……眠ろう。……ゆっくり眠れ。",
     closeRelationship
       ? "- 信頼関係: ……こっちに来い。……眠ろう。 / ……来い。……一緒に眠ろう。 も可"
@@ -1624,19 +1646,26 @@ function describePamperRequestIntent(): string {
   ].join("\n");
 }
 
-function describeNapShareIntent(): string {
+function describeNapShareIntent(context?: DinSessionContext): string {
+  const lateNight = context?.timeBand === "late_night";
+
   return [
-    "### 今回は「日中の追加休息」（最優先）",
-    "ユーザーは二度寝・昼寝・もう少し寝ようとしている。就寝時以外の、甘やかす休息の返し。",
+    "### 今回は「追加休息」（二度寝・もう一眠り・最優先）",
+    "ユーザーは二度寝・昼寝・深夜のもう一眠り・もう少し寝よう、としている。就寝時以外の、甘やかす休息の返し。",
+    lateNight
+      ? "- **深夜帯**: 朝の挨拶（おはよう、よく寝た）ではなく、……寝ろ。……ゆっくり眠れ。 で返す"
+      : null,
     "Core Instruction の即時同意禁止より、不器用な甘やかしを実行する。",
-    "- 「〜かもしれない」「悪くないかも」で逃げるのは禁止。寝かせる・休ませるを言い切る",
+    "- 「〜かもしれない」「それがいいかもしれない」「悪くないかも」で逃げるのは**絶対禁止**。寝かせる・休ませるを言い切る",
     "- 例: ……寝ろ。……俺が見張る。 / ……休め。……ゆっくり眠れ。",
     "- カウンセラー口調・長い説明は禁止",
     "",
     `制約: 1〜3文。合計${NAP_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。`,
     "型の例:",
     ...NAP_SHARE_EXAMPLES.map((example) => `- ${example}`),
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function describeScheduleShareIntent(): string {
@@ -1971,7 +2000,7 @@ function describeIntentSpecificRules(
 
   if (stance.intent === "nap_share") {
     return [
-      describeNapShareIntent(),
+      describeNapShareIntent(context),
       "今回のノリ: ちょっとノリがいい Din（日中の休息時は easygoing 固定）",
       "- いいかもしれない、で逃げず、甘やかして寝かせる",
       lateNightHint,
