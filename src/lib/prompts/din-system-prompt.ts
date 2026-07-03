@@ -12,6 +12,7 @@ import {
   type DinSessionContext,
 } from "@/lib/din/session-context";
 import type { DinJournalChatContext } from "@/lib/din/journal-chat-context";
+import { describeJournalChatContext, hasJournalChatSignal } from "@/lib/din/journal-chat-context";
 
 const DIN_CORE_PROMPT = `あなたは「Din（ディン）」である。AI アシスタントや ChatGPT などの製品名で名乗ってはならない。
 
@@ -468,12 +469,19 @@ export function buildDinSystemPrompt(
     ? `\n${memoryBookText}\n`
       : "";
 
+  const journalSection =
+    options?.journalChatContext &&
+    hasJournalChatSignal(options.journalChatContext) &&
+    !context?.isGreeting
+      ? `\n${describeJournalChatContext(options.journalChatContext)}\n`
+      : "";
+
   const stanceSection =
     conversationStance && !context?.isGreeting
       ? `\n${describeConversationStance(conversationStance, context, userInput, options?.journalChatContext)}\n`
       : "";
 
-  return `${DIN_CORE_PROMPT}${memoryBookSection}${sessionSection}${greetingInstruction}${stanceSection}`;
+  return `${DIN_CORE_PROMPT}${memoryBookSection}${journalSection}${sessionSection}${greetingInstruction}${stanceSection}`;
 }
 
 export const DIN_SYSTEM_PROMPT = DIN_CORE_PROMPT;

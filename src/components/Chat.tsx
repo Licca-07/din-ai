@@ -35,6 +35,7 @@ import { getJournalDateJst } from "@/lib/din/journal-date";
 import {
   ensureDailyJournal,
 } from "@/lib/din/journal-client";
+import { journalContextFromClientJournal } from "@/lib/din/journal-chat-context";
 import { revealAssistantBubbles } from "@/lib/din/chat-bubble-reveal";
 import type { ProactiveOpener } from "@/lib/din/proactive-opener";
 import { buildSessionContext } from "@/lib/din/session-context";
@@ -64,11 +65,17 @@ async function requestDinReply(body: {
   followUpTopic?: string;
   followUpTopicId?: string;
   proactiveOpener?: ProactiveOpener;
+  journalDate?: string;
+  todayJournal?: DinJournal | null;
 }): Promise<DinReply> {
   const sessionContext = buildSessionContext({
     isGreeting: body.requestGreeting ?? false,
   });
   const memory = loadMemory();
+  const journalContext = journalContextFromClientJournal(
+    body.journalDate ?? getJournalDateJst(),
+    body.todayJournal ?? null,
+  );
 
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -85,6 +92,7 @@ async function requestDinReply(body: {
       followUpTopic: body.followUpTopic,
       followUpTopicId: body.followUpTopicId,
       proactiveOpener: body.proactiveOpener,
+      journalContext,
     }),
   });
 
@@ -367,6 +375,8 @@ export default function Chat({
       const reply = await requestDinReply({
         messages: history,
         userProfile: profile,
+        journalDate: todayJournalDate,
+        todayJournal,
       });
 
       if (reply.userProfile) {

@@ -1,7 +1,6 @@
 import type { DinSessionContext } from "@/lib/din/session-context";
 import { isBedtimeWindow, isSleepTimeContext } from "@/lib/din/session-context";
 import type { DinJournalChatContext } from "@/lib/din/journal-chat-context";
-import { describeJournalChatContext } from "@/lib/din/journal-chat-context";
 
 /** 会話のノリ（同一 Din でもターンごとに揺らぐ） */
 export type DinConversationRegister = "easygoing" | "quiet" | "distant";
@@ -1825,13 +1824,10 @@ function describeDinInquiryIntent(
     "ユーザーは Din の行動・予定・今日何をするか・一日の振り返り（いい日だった？どうだった？）を聞いている。冷たく突き放さず、短く答える。",
     "- 「任務に集中している。」「任務があるからな。」**だけ**で距離を取るのは禁止",
     "- 一日の振り返り（Dinもいい日だった？等）: ……まあな。 / ……悪くない。 / ……ああ。 から始め、具体か傍にいるを足す。必要なら ……お前はどうだった。 で返球",
-    "- 具体を1文足す（本を読む、港、整備、ここにいる）",
-    "- 行かない・予定がないなら ……ここにいる。……傍にいる。 を足す",
-    "- 日記余白がある場合は、それと矛盾しない答えにする",
-    "- 評価型・説教は禁止",
     journalChatContext
-      ? describeJournalChatContext(journalChatContext)
-      : null,
+      ? "- 今日の Din の事実は、システムプロンプト上部の「今日の Din（日記・余白との整合）」を参照。矛盾する返答は禁止"
+      : "- 具体を1文足す（本を読む、港、整備、ここにいる）。行かない・予定がないなら ……ここにいる。……傍にいる。",
+    "- 評価型・説教は禁止",
     "",
     `制約: 1〜3文。合計${DIN_INQUIRY_MAX_CHARS}字以内。句点（。）は最大3つ。`,
     "型の例:",

@@ -5,7 +5,6 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import {
-  isDinUserInquiry,
   isEmotionallyLoadedInput,
   maxTokensForIntent,
   resolveConversationStance,
@@ -113,12 +112,9 @@ export async function POST(request: Request) {
       recentAssistantInputs,
     );
 
-    const journalChatContext =
-      !requestGreeting &&
-      (conversationStance.intent === "din_inquiry" ||
-        isDinUserInquiry(latestUserInput))
-        ? await loadJournalChatContext()
-        : null;
+    const journalChatContext = !requestGreeting
+      ? await loadJournalChatContext(body.journalContext)
+      : null;
 
     const completionMessages =
       requestGreeting && body.messages.length === 0
