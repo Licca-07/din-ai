@@ -5,11 +5,16 @@ import {
   buildMemoryPrompt,
 } from "@/lib/din/memory-book-context";
 import {
+  isDinUserInquiry,
   isEmotionallyLoadedInput,
   maxTokensForIntent,
   resolveConversationStance,
+  type ConversationStance,
 } from "@/lib/din/conversation-stance";
-import { loadJournalChatContext } from "@/lib/din/journal-chat-context";
+import {
+  hasJournalChatSignal,
+  loadJournalChatContext,
+} from "@/lib/din/journal-chat-context";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
@@ -21,6 +26,27 @@ import type {
 } from "@/types/chat";
 
 export const runtime = "nodejs";
+
+function applyJournalAwareStance(
+  stance: ConversationStance,
+  userInput: string,
+  journal: Awaited<ReturnType<typeof loadJournalChatContext>>,
+): ConversationStance {
+  if (
+    stance.intent !== "default" ||
+    !hasJournalChatSignal(journal) ||
+    !isDinUserInquiry(userInput)
+  ) {
+    return stance;
+  }
+
+  return {
+    ...stance,
+    intent: "din_inquiry",
+    posture: "agree",
+    register: "easygoing",
+  };
+}
 
 function isValidMessage(message: unknown): message is ChatMessage {
   if (!message || typeof message !== "object") return false;
@@ -116,6 +142,12 @@ export async function POST(request: Request) {
       ? await loadJournalChatContext(body.journalContext)
       : null;
 
+    const effectiveStance = applyJournalAwareStance(
+      conversationStance,
+      latestUserInput,
+      journalChatContext,
+    );
+
     const completionMessages =
       requestGreeting && body.messages.length === 0
         ? [
@@ -133,15 +165,15 @@ export async function POST(request: Request) {
             content: message.content,
           }));
 
-    const shortReplyMaxTokens = maxTokensForIntent(conversationStance.intent);
+    const shortReplyMaxTokens = maxTokensForIntent(effectiveStance.intent);
 
     const defaultTemperature =
-      conversationStance.intent === "default" &&
+      effectiveStance.intent === "default" &&
       isEmotionallyLoadedInput(latestUserInput)
         ? 0.55
-        : conversationStance.register === "easygoing"
+        : effectiveStance.register === "easygoing"
           ? 0.72
-          : conversationStance.register === "quiet"
+          : effectiveStance.register === "quiet"
             ? 0.55
             : 0.6;
 
@@ -153,7 +185,7 @@ export async function POST(request: Request) {
           content: buildDinSystemPrompt(sessionContext, memoryPrompt?.text, {
             followUpTopic,
             proactiveOpener,
-            conversationStance,
+            conversationStance: effectiveStance,
             userInput: latestUserInput,
             journalChatContext,
           }),
@@ -162,47 +194,47 @@ export async function POST(request: Request) {
       ],
       temperature: proactiveOpener
         ? 0.75
-        : conversationStance.intent === "comfort_request"
+        : effectiveStance.intent === "comfort_request"
           ? 0.62
-          : conversationStance.intent === "pamper_request"
+          : effectiveStance.intent === "pamper_request"
             ? 0.7
-          : conversationStance.intent === "nap_share"
+          : effectiveStance.intent === "nap_share"
             ? 0.68
-          : conversationStance.intent === "schedule_share"
+          : effectiveStance.intent === "schedule_share"
             ? 0.67
-          : conversationStance.intent === "return_home_share"
+          : effectiveStance.intent === "return_home_share"
             ? 0.66
-          : conversationStance.intent === "interpersonal_share"
+          : effectiveStance.intent === "interpersonal_share"
             ? 0.65
-          : conversationStance.intent === "departure_share"
+          : effectiveStance.intent === "departure_share"
             ? 0.62
-          : conversationStance.intent === "together_invite"
+          : effectiveStance.intent === "together_invite"
             ? 0.64
-          : conversationStance.intent === "din_inquiry"
+          : effectiveStance.intent === "din_inquiry"
             ? 0.66
-          : conversationStance.intent === "care_share"
+          : effectiveStance.intent === "care_share"
             ? 0.67
-            : conversationStance.intent === "sleep_share"
+            : effectiveStance.intent === "sleep_share"
               ? 0.58
-              : conversationStance.intent === "daily_share"
+              : effectiveStance.intent === "daily_share"
               ? 0.69
-              : conversationStance.intent === "companion_suggest"
+              : effectiveStance.intent === "companion_suggest"
             ? 0.68
-            : conversationStance.intent === "plan_share"
+            : effectiveStance.intent === "plan_share"
               ? 0.68
-              : conversationStance.intent === "bond_share"
+              : effectiveStance.intent === "bond_share"
                 ? 0.64
-                : conversationStance.intent === "attend_share"
+                : effectiveStance.intent === "attend_share"
                   ? 0.65
-                  : conversationStance.intent === "deepen_share"
+                  : effectiveStance.intent === "deepen_share"
               ? 0.66
-              : conversationStance.intent === "casual_share"
+              : effectiveStance.intent === "casual_share"
               ? 0.58
-              : conversationStance.intent === "pushback"
+              : effectiveStance.intent === "pushback"
             ? 0.58
-            : conversationStance.intent === "profile_share"
+            : effectiveStance.intent === "profile_share"
               ? 0.52
-              : conversationStance.intent === "shared_moment"
+              : effectiveStance.intent === "shared_moment"
                 ? 0.55
                 : modelMode === "research"
                   ? 0.52
@@ -249,7 +281,7 @@ export async function POST(request: Request) {
         newFollowUpRecalls.length > 0 ? newFollowUpRecalls : undefined,
       referencedMemoryIds: memoryPrompt?.referencedMemoryIds,
       followUpTopicId: body.followUpTopicId,
-      conversationIntent: conversationStance.intent,
+      conversationIntent: effectiveStance.intent,
     });
   } catch (error) {
     const message =
