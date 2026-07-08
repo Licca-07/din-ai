@@ -16,6 +16,7 @@ import {
   loadJournalChatContext,
 } from "@/lib/din/journal-chat-context";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
+import { applyRememberRequestFallback } from "@/lib/din/remember-request";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
 import type {
@@ -234,6 +235,8 @@ export async function POST(request: Request) {
             ? 0.58
             : effectiveStance.intent === "profile_share"
               ? 0.52
+              : effectiveStance.intent === "remember_request"
+                ? 0.5
               : effectiveStance.intent === "shared_moment"
                 ? 0.55
                 : modelMode === "research"
@@ -260,8 +263,14 @@ export async function POST(request: Request) {
       birthday: "7月7日",
     };
 
-    const { content, remembered, profile, newMemoryItems, newFollowUpRecalls } =
-      parseMemoryFromResponse(rawContent, currentProfile);
+    const parsed = parseMemoryFromResponse(rawContent, currentProfile);
+    const { content, remembered, profile, newMemoryItems } =
+      applyRememberRequestFallback({
+        ...parsed,
+        userInput: latestUserInput,
+        recentUserInputs,
+      });
+    const { newFollowUpRecalls } = parsed;
 
     if (!content) {
       return NextResponse.json<ChatErrorResponse>(

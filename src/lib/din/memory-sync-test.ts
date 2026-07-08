@@ -10,6 +10,7 @@ export function createMemorySyncTestPayload(runId: string): DinMemory {
       occupation: `${MEMORY_SYNC_TEST_MARKER}:${runId}`,
       hobbies: ["sync-test"],
       favoriteFoods: ["verification"],
+      birthday: "7月7日",
     },
     conversationCount: 7,
     lastConversationAt: now,

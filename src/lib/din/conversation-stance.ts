@@ -1,6 +1,9 @@
+import type { DinJournalChatContext } from "@/lib/din/journal-chat-context";
+import { isRememberRequest } from "@/lib/din/remember-request";
 import type { DinSessionContext } from "@/lib/din/session-context";
 import { isBedtimeWindow, isSleepTimeContext } from "@/lib/din/session-context";
-import type { DinJournalChatContext } from "@/lib/din/journal-chat-context";
+
+export { isRememberRequest } from "@/lib/din/remember-request";
 
 /** 会話のノリ（同一 Din でもターンごとに揺らぐ） */
 export type DinConversationRegister = "easygoing" | "quiet" | "distant";
@@ -34,7 +37,8 @@ export type ConversationStance = {
     | "return_home_share"
     | "interpersonal_share"
     | "departure_share"
-    | "together_invite";
+    | "together_invite"
+    | "remember_request";
 };
 
 const CASUAL_USER_PATTERN =
@@ -928,11 +932,14 @@ export const DAILY_SHARE_MAX_TOKENS = 96;
 export const DAILY_SHARE_MAX_CHARS = 80;
 export const TOGETHER_INVITE_MAX_TOKENS = 72;
 export const TOGETHER_INVITE_MAX_CHARS = 56;
+export const REMEMBER_REQUEST_MAX_TOKENS = 96;
+export const REMEMBER_REQUEST_MAX_CHARS = 24;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
   "comfort_request",
   "profile_share",
+  "remember_request",
   "pushback",
   "casual_share",
 ]);
@@ -956,6 +963,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "interpersonal_share",
   "departure_share",
   "together_invite",
+  "remember_request",
 ]);
 
 export function usesIntentShapeOverride(
@@ -1016,6 +1024,8 @@ export function maxTokensForIntent(
       return DAILY_SHARE_MAX_TOKENS;
     case "together_invite":
       return TOGETHER_INVITE_MAX_TOKENS;
+    case "remember_request":
+      return REMEMBER_REQUEST_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -1055,6 +1065,7 @@ function resolveRegister(
     intent === "comfort_request" ||
     intent === "pamper_request" ||
     intent === "profile_share" ||
+    intent === "remember_request" ||
     intent === "pushback" ||
     intent === "casual_share"
   ) {
@@ -1155,6 +1166,7 @@ function resolveIntent(
   context?: DinSessionContext,
 ): ConversationStance["intent"] {
   if (isPushback(userInput)) return "pushback";
+  if (isRememberRequest(userInput)) return "remember_request";
   if (isPamperRequest(userInput)) return "pamper_request";
   if (isNapShare(userInput, context)) return "nap_share";
   if (isComfortRequest(userInput)) return "comfort_request";
@@ -1286,6 +1298,7 @@ export function resolveConversationStance(
         ? "drift"
         : intent === "shared_moment" ||
             intent === "profile_share" ||
+            intent === "remember_request" ||
             intent === "casual_share" ||
             intent === "deepen_share"
           ? "neutral"
@@ -1495,6 +1508,13 @@ const PROFILE_SHARE_EXAMPLES = [
   "ユーザー「わたしは日経バイオテクの記者なんだよ」→「分かった。」",
   "ユーザー「趣味は写真だよ」→「知った。」",
   "ユーザー「好きな食べ物は寿司だね」→「寿司か。」",
+];
+
+const REMEMBER_REQUEST_EXAMPLES = [
+  "ユーザー「誕生日は7月7日だから覚えててね」→「……分かった。」 + 最終行に [[MEMORY:{\"birthday\":\"7月7日\",\"longTerm\":[{\"content\":\"誕生日は7月7日\",\"importance\":5}]}]]",
+  "ユーザー「覚えててね。趣味は写真だよ」→「……知った。」 + 最終行に [[MEMORY:{\"hobbies\":[\"写真\"],\"longTerm\":[{\"content\":\"趣味は写真\",\"importance\":3}]}]]",
+  "ユーザー「これ覚えといて。来週ボストン出張」→「……分かった。」 + 最終行に [[MEMORY:{\"longTerm\":[{\"content\":\"来週ボストン出張\",\"importance\":4}]}]]",
+  "（直前に事実を話したあと）ユーザー「覚えててね」→「……ああ。」 + 最終行に直前の事実を longTerm で付ける",
 ];
 
 const PUSHBACK_EXAMPLES = [
@@ -1893,6 +1913,23 @@ function describeProfileShareIntent(): string {
   ].join("\n");
 }
 
+function describeRememberRequestIntent(): string {
+  return [
+    "### 今回は「記憶の依頼」（最優先）",
+    "ユーザーは「覚えて」「覚えててね」「記憶して」など、明示的に記憶を求めている。",
+    "短く受け止め、**必ず**最終行に [[MEMORY:...]] を付ける。本文に「覚えた」「記憶した」とは書かない。",
+    "- 同じ発話内の事実を優先して記録する",
+    "- 事実がこの発話に無ければ、直前のユーザー発話から記憶すべき1事実を選ぶ",
+    "- プロフィール項目（誕生日・職業・趣味・好きなもの）なら profile 用キーも併用してよい",
+    "- 評価・説明・2文目以降は付けない",
+    "- マーカー省略は禁止（UI が記憶した表示を出せない）",
+    "",
+    `制約: 本文1文のみ。${REMEMBER_REQUEST_MAX_CHARS}字以内。句点（。）は最大1つ。最終行は必ずマーカー。`,
+    "型の例:",
+    ...REMEMBER_REQUEST_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describePushbackIntent(): string {
   return [
     "### 今回は「返答へのツッコミ」（最優先）",
@@ -2201,6 +2238,14 @@ function describeIntentSpecificRules(
     ];
   }
 
+  if (stance.intent === "remember_request") {
+    return [
+      describeRememberRequestIntent(),
+      "今回のノリ: ちょっと静かな Din（記憶依頼時は quiet 固定）",
+      "- 記憶依頼時は本文1文＋最終行マーカーを最優先。マーカー省略は禁止",
+    ];
+  }
+
   if (stance.intent === "pushback") {
     return [
       describePushbackIntent(),
@@ -2309,6 +2354,8 @@ export function describeConversationStance(
         ? "受け止め: 説明で正当化せず、短く引くか言い過ぎを認める。"
         : stance.intent === "profile_share"
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
+          : stance.intent === "remember_request"
+            ? "受け止め: 短く受け止め、必ず最終行に記憶マーカーを付ける。"
           : stance.intent === "casual_share"
             ? "受け止め: 会話に短く乗る。毎回評価・言い換え・助言で返さない。"
             : stance.intent === "deepen_share"
