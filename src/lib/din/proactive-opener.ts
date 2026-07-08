@@ -3,6 +3,7 @@ import {
   EARLY_MORNING_WAKE_OPENERS,
   getBusyCheckGreeting,
   isEarlyMorningWakeWindow,
+  isLateNightHour,
   type DinAbsence,
   type DinSessionContext,
 } from "@/lib/din/session-context";
@@ -110,7 +111,7 @@ function selectSessionSeed(
   }
 
   const pool = [...SESSION_OPENERS[context.absence]];
-  if (context.absence === "one_day") {
+  if (context.absence === "one_day" && !isLateNightHour(now)) {
     pool.unshift(getBusyCheckGreeting(now));
   }
 

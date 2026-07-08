@@ -117,9 +117,18 @@ const DIN_USER_ASKS_DIN_PATTERN = new RegExp(
     `${DIN_ADDRESS_PATTERN}(?:は|も)?.{0,24}(?:整備|機械|読|港|本|任務|何して|何す|何や)`,
     `${DIN_ADDRESS_PATTERN}(?:は|も)?.{0,12}(?:今日|きょう|また).{0,20}(?:整備|機械|読|港|本|忙し)`,
     `${DIN_ADDRESS_PATTERN}.{0,24}(?:コード|プログラ|実装|開発).{0,16}(?:書|書い|かい|した|して)[？?]?`,
+    `(?:今日|きょう|今)(?:は|も)?.{0,8}忙し(?:い|かった)(?:の|ん)?(?:か|ですか)[？?]?`,
+    `^忙し(?:い|かった)(?:の|ん)?(?:か|ですか)[？?]?$`,
   ].join("|"),
   "i",
 );
+
+/** 予定の具体語（これが無い「忙しい？」は Din への問いかけ） */
+const SCHEDULE_DETAIL_PATTERN =
+  /記者|会見|取材|帰る|遅く|夜に|予定|仕事|準備|映画|ドラマ|見に|費や|会見/i;
+
+const DIN_BUSY_INQUIRY_PATTERN =
+  /^(?:今日|きょう|今)(?:は|も)?.{0,8}忙し(?:い|かった)(?:の|ん)?(?:か|ですか)[？?]?$|^忙し(?:い|かった)(?:の|ん)?(?:か|ですか)[？?]?$/iu;
 
 const SCHEDULE_SHARE_CONTINUATION_PATTERN =
   /記者|会見|取材|夜|遅|帰|忙|仕事|話したい|Din|ディン|帰宅|準備|困|変わ|予定|費や|まだ/i;
@@ -403,6 +412,14 @@ export function isScheduleShare(input: string): boolean {
   if (!normalized) return false;
   if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
   if (isPushback(normalized) || isDinUserInquiry(normalized)) return false;
+  if (
+    DIN_BUSY_INQUIRY_PATTERN.test(normalized) ||
+    (/[？?]/.test(normalized) &&
+      /忙し/.test(normalized) &&
+      !SCHEDULE_DETAIL_PATTERN.test(normalized))
+  ) {
+    return false;
+  }
   return (
     SCHEDULE_SHARE_PATTERN.test(normalized) ||
     LATER_TALK_PATTERN.test(normalized)
@@ -1239,13 +1256,13 @@ function resolveIntent(
   if (isTogetherInvite(userInput)) {
     return "together_invite";
   }
+  if (isDinUserInquiry(userInput)) return "din_inquiry";
   if (
     isScheduleShare(userInput) ||
     isScheduleShareContinuation(userInput, recentUserInputs)
   ) {
     return "schedule_share";
   }
-  if (isDinUserInquiry(userInput)) return "din_inquiry";
   if (
     isSleepShare(userInput, context) ||
     isSleepShareContinuation(userInput, recentUserInputs, context)
@@ -1543,6 +1560,8 @@ const DIN_INQUIRY_EXAMPLES = [
   "ユーザー「Dinの今日はどうだった？」→「……悪くない。……ここにいる。……お前はどうだった。」",
   "ユーザー「ディンも楽しかった？」→「……ああ。……特に変わりはない。……聞いてる。」",
   "（深夜）ユーザー「Dinもいい日だった？」→「……まあな。……ここにいる。……お前はどうだった。」",
+  "（深夜 0〜5時）ユーザー「今日は忙しいのか？」→「……ああ。……任務は後回しだ。……傍にいる。……お前はどうだ。」",
+  "（深夜 0〜5時）ユーザー「忙しいのか？」→「……今はここにいる。……眠れないのか。」",
   "悪い例（禁止）→「……任務に集中している。」だけ",
   "悪い例（禁止）→「……特に決まっていない。」「……任務は常にある。」だけ",
 ];
@@ -1918,10 +1937,16 @@ function describeTogetherInviteIntent(context?: DinSessionContext): string {
 
 function describeDinInquiryIntent(
   journalChatContext?: DinJournalChatContext | null,
+  context?: DinSessionContext,
 ): string {
+  const lateNight = context?.timeBand === "late_night";
+
   return [
     "### 今回は「Din についての質問」（最優先）",
-    "ユーザーは Din の行動・予定・今日何をするか・一日の振り返り（いい日だった？どうだった？）を聞いている。冷たく突き放さず、短く答える。",
+    "ユーザーは Din の行動・予定・今日何をするか・忙しさ・一日の振り返りを聞いている。冷たく突き放さず、短く答える。",
+    lateNight
+      ? "- **深夜帯（0〜5時）**: 「今日は忙しいのか？」は昼の予定確認ではない。……任務は後回しだ。……傍にいる。……お前はどうだ。 / ……今はここにいる。 で返す"
+      : null,
     "- 「任務に集中している。」「任務があるからな。」**だけ**で距離を取るのは禁止",
     "- 一日の振り返り（Dinもいい日だった？ / どんな1日だった？等）: ……まあな。 / ……悪くない。 / ……ああ。 から始め、具体か傍にいるを足す。必要なら ……お前はどうだった。 で返球",
     "- コードを書いたか等: プログラマではない。日記余白の具体で答える（……港で本を読んでいた。……コードではない。）",
@@ -2273,7 +2298,7 @@ function describeIntentSpecificRules(
 
   if (stance.intent === "din_inquiry") {
     return [
-      describeDinInquiryIntent(journalChatContext),
+      describeDinInquiryIntent(journalChatContext, context),
       "今回のノリ: ちょっとノリがいい Din（Din への質問時は easygoing 固定）",
       "- 任務に集中している、だけで終えない。日記余白の具体か、ここにいる、を足す",
       lateNightHint,

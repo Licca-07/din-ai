@@ -9,6 +9,7 @@ import {
   getBusyCheckGreeting,
   getLastVisitIso,
   isEarlyMorningWakeWindow,
+  isLateNightHour,
   maxIsoTimestamp,
 } from "@/lib/din/session-context";
 import type { DinMemory } from "@/types/din-memory";
@@ -32,6 +33,9 @@ const SHORT_RETURN_MESSAGES = [
 ];
 
 function getMildCareMessages(now = new Date()): string[] {
+  if (isLateNightHour(now)) {
+    return ["まだ起きていたのか。", "少し顔を見ない間に何かあったか。"];
+  }
   return [getBusyCheckGreeting(now), "少し顔を見ない間に何かあったか。"];
 }
 

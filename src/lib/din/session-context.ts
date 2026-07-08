@@ -67,10 +67,15 @@ export function isPastDayReflectionTime(date = new Date()): boolean {
   return getJstHour(date) >= 20;
 }
 
-/** 2:00〜5:59（JST）の早朝帯。夜中に目が覚えたユーザー向け */
-export function isEarlyMorningWakeWindow(date = new Date()): boolean {
+/** 0:00〜4:59（JST）の深夜帯。就寝・不眠・夜中の会話向け */
+export function isLateNightHour(date = new Date()): boolean {
   const hour = getJstHour(date);
-  return hour >= 2 && hour < 6;
+  return hour >= 0 && hour < 5;
+}
+
+/** @deprecated 互換の別名。深夜帯（0:00〜4:59） */
+export function isEarlyMorningWakeWindow(date = new Date()): boolean {
+  return isLateNightHour(date);
 }
 
 export const EARLY_MORNING_WAKE_OPENERS = [
@@ -83,6 +88,9 @@ export const EARLY_MORNING_WAKE_OPENERS = [
 ] as const;
 
 export function getBusyCheckGreeting(date = new Date()): string {
+  if (isLateNightHour(date)) {
+    return "まだ起きていたのか。";
+  }
   return isPastDayReflectionTime(date)
     ? "忙しかったのか。"
     : "今日は忙しいのか？";
