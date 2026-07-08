@@ -33,6 +33,7 @@ export type MemoryMarkerUpdate = {
   occupation?: string;
   hobbies?: string[];
   favoriteFoods?: string[];
+  birthday?: string;
   longTerm?: Array<{
     content: string;
     importance?: MemoryImportance;

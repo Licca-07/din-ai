@@ -1,3 +1,4 @@
+import { normalizeUserProfile, migrateBirthdayMemory } from "@/lib/din/birthday-memory";
 import type { StoredChatMessage } from "@/types/din-memory";
 import type { DinMemory, DinMemoryProfile } from "@/types/din-memory";
 import type {
@@ -14,6 +15,7 @@ export const SAMPLE_USER_PROFILE: UserProfile = {
   occupation: "専門記者",
   hobbies: ["音楽", "映画", "読書", "料理"],
   favoriteFoods: ["寿司", "ドーナツ"],
+  birthday: "7月7日",
 };
 
 export const DEFAULT_MEMORY: DinMemory = {
@@ -92,7 +94,8 @@ export function isValidProfile(value: unknown): value is DinMemoryProfile {
     Array.isArray(profile.hobbies) &&
     profile.hobbies.every((item) => typeof item === "string") &&
     Array.isArray(profile.favoriteFoods) &&
-    profile.favoriteFoods.every((item) => typeof item === "string")
+    profile.favoriteFoods.every((item) => typeof item === "string") &&
+    (typeof profile.birthday === "string" || profile.birthday === undefined)
   );
 }
 
@@ -103,7 +106,7 @@ export function normalizeMemory(value: Partial<DinMemory>): DinMemory {
     : [];
 
   return {
-    profile: value.profile ?? DEFAULT_MEMORY.profile,
+    profile: normalizeUserProfile(value.profile ?? DEFAULT_MEMORY.profile),
     conversationCount: value.conversationCount ?? 0,
     lastConversationAt,
     chatHistory: backfillChatHistoryTimestamps(rawChatHistory, lastConversationAt),
@@ -118,6 +121,10 @@ export function normalizeMemory(value: Partial<DinMemory>): DinMemory {
     lastAppOpenedAt: value.lastAppOpenedAt ?? null,
     lastStartupMessage: value.lastStartupMessage ?? null,
   };
+}
+
+function finalizeMemory(memory: DinMemory): DinMemory {
+  return migrateBirthdayMemory(memory);
 }
 
 export function isValidMemory(value: unknown): value is DinMemory {
@@ -200,10 +207,11 @@ export function normalizePartialMemory(value: unknown): DinMemory | null {
 
 export function parseMemory(value: unknown): DinMemory | null {
   if (isValidMemory(value)) {
-    return normalizeMemory(value);
+    return finalizeMemory(normalizeMemory(value));
   }
 
-  return normalizePartialMemory(value);
+  const partial = normalizePartialMemory(value);
+  return partial ? finalizeMemory(partial) : null;
 }
 
 export function hasStoredMemoryData(memory: DinMemory): boolean {
@@ -216,6 +224,7 @@ export function hasStoredMemoryData(memory: DinMemory): boolean {
     memory.followUpTopics.length > 0 ||
     memory.profile.occupation.trim().length > 0 ||
     memory.profile.hobbies.length > 0 ||
-    memory.profile.favoriteFoods.length > 0
+    memory.profile.favoriteFoods.length > 0 ||
+    memory.profile.birthday.trim().length > 0
   );
 }

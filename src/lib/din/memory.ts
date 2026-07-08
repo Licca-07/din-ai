@@ -439,11 +439,13 @@ export function describeUserProfile(profile: UserProfile): string {
     profile.favoriteFoods.length > 0
       ? profile.favoriteFoods.join("、")
       : "未設定";
+  const birthday = profile.birthday.trim() || "未設定";
 
   return [
     `- 職業: ${occupation}`,
     `- 趣味: ${hobbies}`,
     `- 好きなもの: ${favoriteFoods}`,
+    `- 誕生日: ${birthday}（暦日。今日の日付と混同しない）`,
   ].join("\n");
 }
 

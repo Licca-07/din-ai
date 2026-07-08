@@ -13,7 +13,12 @@ function applyProfileUpdates(
     occupation: current.occupation,
     hobbies: [...current.hobbies],
     favoriteFoods: [...current.favoriteFoods],
+    birthday: current.birthday,
   };
+
+  if (typeof updates.birthday === "string" && updates.birthday.trim()) {
+    next.birthday = updates.birthday.trim();
+  }
 
   if (typeof updates.occupation === "string" && updates.occupation.trim()) {
     next.occupation = updates.occupation.trim();
@@ -44,7 +49,8 @@ function hasProfileChanges(before: UserProfile, after: UserProfile): boolean {
   return (
     before.occupation !== after.occupation ||
     before.hobbies.join("\u0000") !== after.hobbies.join("\u0000") ||
-    before.favoriteFoods.join("\u0000") !== after.favoriteFoods.join("\u0000")
+    before.favoriteFoods.join("\u0000") !== after.favoriteFoods.join("\u0000") ||
+    before.birthday !== after.birthday
   );
 }
 
@@ -123,6 +129,18 @@ function buildMemoryItemsFromMarker(updates: MemoryMarkerUpdate): MemoryItem[] {
         content: `好きなものは${trimmed}`,
         importance: 3,
         category: "favorite",
+        source: "conversation",
+      }),
+    );
+  }
+
+  if (typeof updates.birthday === "string" && updates.birthday.trim()) {
+    items.push(
+      createMemoryItem({
+        kind: "long_term",
+        content: `誕生日は${updates.birthday.trim()}`,
+        importance: 5,
+        category: "profile",
         source: "conversation",
       }),
     );

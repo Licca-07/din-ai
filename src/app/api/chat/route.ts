@@ -257,6 +257,7 @@ export async function POST(request: Request) {
       occupation: "",
       hobbies: [],
       favoriteFoods: [],
+      birthday: "7月7日",
     };
 
     const { content, remembered, profile, newMemoryItems, newFollowUpRecalls } =

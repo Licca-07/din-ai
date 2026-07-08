@@ -462,6 +462,42 @@ export default function MemoryBook({
               </div>
             </div>
 
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-zinc-300">誕生日</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={memory.profile.birthday}
+                  onChange={(event) =>
+                    persistMemory((current) => ({
+                      ...current,
+                      profile: {
+                        ...current.profile,
+                        birthday: event.target.value,
+                      },
+                    }))
+                  }
+                  placeholder="例: 7月7日"
+                  className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    persistMemory((current) => ({
+                      ...current,
+                      profile: {
+                        ...current.profile,
+                        birthday: "7月7日",
+                      },
+                    }))
+                  }
+                  className="rounded-xl border border-zinc-700 px-3 py-2 text-xs text-zinc-300 transition hover:bg-zinc-900"
+                >
+                  7/7
+                </button>
+              </div>
+            </div>
+
             <EditableList
               label="趣味"
               items={memory.profile.hobbies}
