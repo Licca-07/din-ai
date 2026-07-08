@@ -62,7 +62,7 @@ export default function TodayJournalSheet({
               今日の日記
             </h2>
             <p className="mt-1 text-sm text-zinc-400">
-              {formatJournalDateLabel(journalDate)}
+              {formatJournalDateLabel(journalDate)}（JST）
             </p>
           </div>
           <button

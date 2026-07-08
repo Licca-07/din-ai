@@ -50,13 +50,18 @@ export function normalizeJournalDate(value: string): string {
 
 /** JST の日付（YYYY-MM-DD） */
 export function getJournalDateJst(date = new Date()): string {
-  const { year, month, day } = readJstParts(date);
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: JST,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 /** JST の 0〜23 時 */
 export function getJstHour(date = new Date()): number {
-  return readJstParts(date).hour;
+  const hour = readJstParts(date).hour;
+  return hour >= 24 ? 0 : hour;
 }
 
 /** JST の曜日（0=日, 6=土） */

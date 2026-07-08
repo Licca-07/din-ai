@@ -34,6 +34,7 @@ import {
 import { getJournalDateJst } from "@/lib/din/journal-date";
 import {
   ensureDailyJournal,
+  fetchTodayJournal,
 } from "@/lib/din/journal-client";
 import { journalContextFromClientJournal } from "@/lib/din/journal-chat-context";
 import { revealAssistantBubbles } from "@/lib/din/chat-bubble-reveal";
@@ -65,17 +66,13 @@ async function requestDinReply(body: {
   followUpTopic?: string;
   followUpTopicId?: string;
   proactiveOpener?: ProactiveOpener;
-  journalDate?: string;
   todayJournal?: DinJournal | null;
 }): Promise<DinReply> {
   const sessionContext = buildSessionContext({
     isGreeting: body.requestGreeting ?? false,
   });
   const memory = loadMemory();
-  const journalContext = journalContextFromClientJournal(
-    body.journalDate ?? getJournalDateJst(),
-    body.todayJournal ?? null,
-  );
+  const journalContext = journalContextFromClientJournal(body.todayJournal ?? null);
 
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -189,6 +186,40 @@ export default function Chat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, error]);
+
+  useEffect(() => {
+    function refreshJournalIfDateChanged() {
+      const journalDate = getJournalDateJst();
+      if (journalDate === todayJournalDate) return;
+
+      void (async () => {
+        setIsJournalLoading(true);
+        setJournalError(null);
+
+        try {
+          const today = await fetchTodayJournal({ force: true });
+          setTodayJournalDate(today.journalDate);
+          setTodayJournal(today.journal);
+        } catch (error) {
+          setJournalError(
+            error instanceof Error ? error.message : "日記の取得に失敗しました。",
+          );
+        } finally {
+          setIsJournalLoading(false);
+        }
+      })();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refreshJournalIfDateChanged();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [todayJournalDate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -375,8 +406,8 @@ export default function Chat({
       const reply = await requestDinReply({
         messages: history,
         userProfile: profile,
-        journalDate: todayJournalDate,
-        todayJournal,
+        todayJournal:
+          todayJournal?.journalDate === getJournalDateJst() ? todayJournal : null,
       });
 
       if (reply.userProfile) {

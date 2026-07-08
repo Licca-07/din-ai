@@ -67,13 +67,15 @@ export function hasJournalChatSignal(
 export async function loadJournalChatContext(
   clientContext?: JournalContextInput | null,
 ): Promise<DinJournalChatContext | null> {
-  const journalDate = clientContext?.journalDate ?? getJournalDateJst();
+  const journalDate = getJournalDateJst();
+  const clientForToday =
+    clientContext?.journalDate === journalDate ? clientContext : null;
 
   if (!isSupabaseConfigured()) {
     return buildJournalChatContext({
       journalDate,
-      margin: clientContext?.margin?.trim() || null,
-      contentExcerpt: clientContext?.contentExcerpt?.trim() || null,
+      margin: clientForToday?.margin?.trim() || null,
+      contentExcerpt: clientForToday?.contentExcerpt?.trim() || null,
       ongoingThread: null,
       lookingForward: null,
     });
@@ -87,10 +89,10 @@ export async function loadJournalChatContext(
 
     const margin =
       journal?.margin?.trim() ||
-      clientContext?.margin?.trim() ||
+      clientForToday?.margin?.trim() ||
       null;
     const contentExcerpt =
-      clientContext?.contentExcerpt?.trim() ||
+      clientForToday?.contentExcerpt?.trim() ||
       excerptJournalContent(journal?.content) ||
       null;
 
@@ -106,8 +108,8 @@ export async function loadJournalChatContext(
 
     return buildJournalChatContext({
       journalDate,
-      margin: clientContext?.margin?.trim() || null,
-      contentExcerpt: clientContext?.contentExcerpt?.trim() || null,
+      margin: clientForToday?.margin?.trim() || null,
+      contentExcerpt: clientForToday?.contentExcerpt?.trim() || null,
       ongoingThread: null,
       lookingForward: null,
     });
@@ -146,10 +148,14 @@ export function describeJournalChatContext(
 }
 
 export function journalContextFromClientJournal(
-  journalDate: string,
-  journal: { margin?: string | null; content?: string | null } | null,
+  journal: { journalDate?: string; margin?: string | null; content?: string | null } | null,
 ): JournalContextInput | undefined {
   if (!journal) return undefined;
+
+  const journalDate = getJournalDateJst();
+  if (journal.journalDate && journal.journalDate !== journalDate) {
+    return undefined;
+  }
 
   return {
     journalDate,
