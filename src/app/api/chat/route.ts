@@ -17,6 +17,7 @@ import {
 } from "@/lib/din/journal-chat-context";
 import { parseMemoryFromResponse } from "@/lib/din/memory-marker";
 import { applyRememberRequestFallback } from "@/lib/din/remember-request";
+import { correctEvaluationOnlyResponse } from "@/lib/din/response-guard";
 import { getOpenAIClient, getOpenAIModelMini, resolveChatModel } from "@/lib/openai";
 import { buildDinSystemPrompt } from "@/lib/prompts/din-system-prompt";
 import type {
@@ -237,6 +238,8 @@ export async function POST(request: Request) {
               ? 0.52
               : effectiveStance.intent === "remember_request"
                 ? 0.5
+              : effectiveStance.intent === "insomnia_share"
+                ? 0.58
               : effectiveStance.intent === "shared_moment"
                 ? 0.55
                 : modelMode === "research"
@@ -264,12 +267,17 @@ export async function POST(request: Request) {
     };
 
     const parsed = parseMemoryFromResponse(rawContent, currentProfile);
-    const { content, remembered, profile, newMemoryItems } =
-      applyRememberRequestFallback({
-        ...parsed,
-        userInput: latestUserInput,
-        recentUserInputs,
-      });
+    const withFallback = applyRememberRequestFallback({
+      ...parsed,
+      userInput: latestUserInput,
+      recentUserInputs,
+    });
+    const content = correctEvaluationOnlyResponse(
+      latestUserInput,
+      withFallback.content,
+      effectiveStance.intent,
+    );
+    const { remembered, profile, newMemoryItems } = withFallback;
     const { newFollowUpRecalls } = parsed;
 
     if (!content) {

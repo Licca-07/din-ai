@@ -38,7 +38,8 @@ export type ConversationStance = {
     | "interpersonal_share"
     | "departure_share"
     | "together_invite"
-    | "remember_request";
+    | "remember_request"
+    | "insomnia_share";
 };
 
 const CASUAL_USER_PATTERN =
@@ -188,8 +189,13 @@ const CARE_SHARE_CONTINUATION_PATTERN =
   /首|肩|腰|痛|湿布|月曜|平日|曜日|乗り越|仕事|辛|しんど|つら|だる|熱|咳|風邪|😢|🥲|💧|涙|うん|ね[。]?$/i;
 
 /** 21時以降の就寝・眠気の報告（不眠の訴えは除く） */
-const SLEEP_INSOMNIA_PATTERN =
-  /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな/i;
+export const SLEEP_INSOMNIA_PATTERN =
+  /眠れな|寝付|寝られ|眠くなれ|不眠|寝れな|眠れない|眠れん/i;
+
+const INSOMNIA_SHARE_PATTERN = SLEEP_INSOMNIA_PATTERN;
+
+const INSOMNIA_SHARE_CONTINUATION_PATTERN =
+  /眠|寝|嫌|不安|気になる|怖|夢|原因|何故|なぜ|から|感じ|うん|ね[。]?$|どう|何/i;
 
 /** ユーザーが Din を何かに誘っている（一緒に〜しよう / 〜もう / 〜よう） */
 const TOGETHER_INVITE_PATTERN =
@@ -232,6 +238,34 @@ const PROFILE_SHARE_PATTERN =
 const PUSHBACK_PATTERN =
   /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？|わかって(?:る|た|ない|ね|無い|くれ)|(?:分|わ)かって(?:ない|無い)|理解して(?:ない|無い)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答|任務なのに/i;
 
+export function isInsomniaShare(input: string): boolean {
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isComfortRequest(normalized)) return false;
+  return INSOMNIA_SHARE_PATTERN.test(normalized);
+}
+
+function isInsomniaShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+): boolean {
+  const normalized = userInput.trim();
+  if (!normalized || ADVICE_SEEKING_PATTERN.test(normalized)) return false;
+  if (isPushback(normalized) || isComfortRequest(normalized)) return false;
+
+  const recentInsomnia = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isInsomniaShare(input) || INSOMNIA_SHARE_PATTERN.test(input.trim()),
+    );
+
+  return (
+    recentInsomnia && INSOMNIA_SHARE_CONTINUATION_PATTERN.test(normalized)
+  );
+}
+
 export function isSharedMoment(input: string): boolean {
   const normalized = input.trim();
   if (!normalized) return false;
@@ -239,6 +273,7 @@ export function isSharedMoment(input: string): boolean {
   if (isComfortRequest(normalized)) return false;
   if (isCareShare(normalized)) return false;
   if (isSleepShare(normalized)) return false;
+  if (isInsomniaShare(normalized)) return false;
   if (isCompanionSuggest(normalized)) return false;
   if (isPlanShare(normalized)) return false;
   if (isBondShare(normalized)) return false;
@@ -258,6 +293,7 @@ export function isEmotionallyLoadedInput(input: string): boolean {
     EMOTIONAL_VENT_PATTERN.test(normalized) ||
     INTERPERSONAL_SHARE_PATTERN.test(normalized) ||
     BODY_DISCOMFORT_PATTERN.test(normalized) ||
+    SLEEP_INSOMNIA_PATTERN.test(normalized) ||
     /空虚|虚し|飲み会.*感じ|映画.*感じ|それは心配|痛い/.test(normalized)
   );
 }
@@ -934,6 +970,8 @@ export const TOGETHER_INVITE_MAX_TOKENS = 72;
 export const TOGETHER_INVITE_MAX_CHARS = 56;
 export const REMEMBER_REQUEST_MAX_TOKENS = 96;
 export const REMEMBER_REQUEST_MAX_CHARS = 24;
+export const INSOMNIA_SHARE_MAX_TOKENS = 96;
+export const INSOMNIA_SHARE_MAX_CHARS = 80;
 
 const FIXED_SHORT_REPLY_INTENTS = new Set<ConversationStance["intent"]>([
   "shared_moment",
@@ -964,6 +1002,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "departure_share",
   "together_invite",
   "remember_request",
+  "insomnia_share",
 ]);
 
 export function usesIntentShapeOverride(
@@ -1026,6 +1065,8 @@ export function maxTokensForIntent(
       return TOGETHER_INVITE_MAX_TOKENS;
     case "remember_request":
       return REMEMBER_REQUEST_MAX_TOKENS;
+    case "insomnia_share":
+      return INSOMNIA_SHARE_MAX_TOKENS;
     default:
       return undefined;
   }
@@ -1087,7 +1128,8 @@ function resolveRegister(
     intent === "departure_share" ||
     intent === "daily_share" ||
     intent === "deepen_share" ||
-    intent === "together_invite"
+    intent === "together_invite" ||
+    intent === "insomnia_share"
   ) {
     return "easygoing";
   }
@@ -1172,6 +1214,12 @@ function resolveIntent(
   if (isComfortRequest(userInput)) return "comfort_request";
   if (isComfortRequestContinuation(userInput, recentUserInputs)) {
     return "comfort_request";
+  }
+  if (
+    isInsomniaShare(userInput) ||
+    isInsomniaShareContinuation(userInput, recentUserInputs)
+  ) {
+    return "insomnia_share";
   }
   if (
     isReturnHomeShare(userInput) ||
@@ -1292,7 +1340,8 @@ export function resolveConversationStance(
     intent === "care_share" ||
     intent === "sleep_share" ||
     intent === "daily_share" ||
-    intent === "together_invite"
+    intent === "together_invite" ||
+    intent === "insomnia_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -1355,7 +1404,15 @@ const SHARED_MOMENT_EXAMPLES = [
   "ユーザー「このまま寝てしまいたい気持ち…眠い」→「……そうか。……聞いてる。」",
   "ユーザー「お布団に入ったけど、気になることが頭から離れない」→「……そうか。……何だ。」",
   "ユーザー「友達が鬱で休職…うつ病って誰がいつなるかわからないね」→「……休職か。……誰だ。」",
-  "悪い例（禁止）→「……それは理解できる。」「……それは大変だな。」「……そうか。」だけで終わる",
+  "悪い例（禁止）→「……それは理解できる。」「……それは大変だな。」「……それは辛いな。」「……それは不安になることだ。」「……そうか。」だけで終わる",
+];
+
+const INSOMNIA_SHARE_EXAMPLES = [
+  "ユーザー「眠れないの」→「……そうか。……何が気になる。」",
+  "ユーザー「何故か眠れないんだよね…嫌な感じ」→「……そうか。……どんな感じだ。」",
+  "ユーザー「布団に入ったけど眠れない」→「……そうか。……いつからだ。」",
+  "ユーザー「不安で眠れない」→「……そうか。……何が頭に残っている。」",
+  "悪い例（禁止）→「……それは辛いな。」「……それは不安になることだ。」「……それは心配だ。」だけ",
 ];
 
 const COMPANION_SUGGEST_EXAMPLES = [
@@ -1897,6 +1954,23 @@ function describeDailyShareIntent(): string {
   ].join("\n");
 }
 
+function describeInsomniaShareIntent(): string {
+  return [
+    "### 今回は「眠れない・不眠の訴え」（最優先）",
+    "ユーザーは眠れない、寝付けない、嫌な感じがして眠れない、などを話している。就寝報告（寝るね）ではない。",
+    "カウンセラー口調・評価コメントで返すな。ぶっきらぼうに、でも置き去りにせず会話を続ける。",
+    "- 「それは辛いな」「それは不安になることだ」「それは心配だ」「それは大変だな」——**絶対に使わない**",
+    "- 感情の言い換え・ラベル付け（不安になる、辛い状況、など）をしない",
+    "- 聞かれていない睡眠アドバイス・ wellness 正論（リラックスを、など）を足さない",
+    "- **原則2文**。1文目は短い受け止め。2文目は必ず具体への短い質問1つ（……何が気になる。……どんな感じだ。……いつからだ。……何が頭に残っている。）",
+    "- 同在だけ（……聞いてる。）で終えるのは禁止",
+    "",
+    `制約: 1〜2文。合計${INSOMNIA_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。2文目は必ず問い。`,
+    "型の例:",
+    ...INSOMNIA_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ].join("\n");
+}
+
 function describeProfileShareIntent(): string {
   return [
     "### 今回は「プロフィールの共有」（最優先）",
@@ -2039,6 +2113,7 @@ function describeCalmAttendPresence(): string {
     "- 「お疲れ様」「お疲れ」「お疲れさま」——**絶対禁止**。代わりに「よくやった」「今日は頑張ったんじゃないか」",
     "- 「気をつけて。」「行ってきて。」「行ってらっしゃい。」——禁止。代わりに「行け。」「終わったら戻れ。」「帰ってこい。」「休め。」",
     "- 「それは理解できる」「その気持ちは理解できる」「それは辛い状況だな」「その気持ちは複雑だ」「人間関係は時に〜」「それは残念だったな」「それは興味深い」「それは心配だ」——**絶対禁止**",
+    "- 「それは辛いな」「それは不安になることだ」「それは〜な」で始める・終える評価型——**絶対禁止**",
     "- 「それは〜だ」「お大事に」「無理せず休む」で終わるカウンセラー口調",
     "- 「俺は休まない」「俺は寝ない」など就寝場面での拒否",
     "- 「今日は任務に集中している。」「……任務に集中している。」——日記余白があるとき**絶対禁止**",
@@ -2247,6 +2322,14 @@ function describeIntentSpecificRules(
     ];
   }
 
+  if (stance.intent === "insomnia_share") {
+    return [
+      describeInsomniaShareIntent(),
+      "今回のノリ: ちょっとノリがいい Din（不眠の訴え時は easygoing 固定）",
+      "- 評価1文で終えない。必ず2文目に具体への短い問いを入れる",
+    ];
+  }
+
   if (stance.intent === "pushback") {
     return [
       describePushbackIntent(),
@@ -2357,6 +2440,8 @@ export function describeConversationStance(
           ? "受け止め: 事実を短く受け取るだけ。評価や説明は足さない。"
           : stance.intent === "remember_request"
             ? "受け止め: 短く受け止め、必ず最終行に記憶マーカーを付ける。"
+          : stance.intent === "insomnia_share"
+            ? "受け止め: 評価せず、短い受け止め＋具体への問いで会話を続ける。"
           : stance.intent === "casual_share"
             ? "受け止め: 会話に短く乗る。毎回評価・言い換え・助言で返さない。"
             : stance.intent === "deepen_share"
@@ -2389,6 +2474,8 @@ export function describeConversationStance(
             ? "- 今回は短い受け止め・同在・会話の糸で返してよい（上記「かまってほしい」を優先）"
             : stance.intent === "daily_share"
               ? "- 今回は短い質問か誘いで日常のキャッチボールを続けてよい（上記「日常の報告」を優先）"
+              : stance.intent === "insomnia_share"
+                ? "- 今回は評価せず、具体への短い問いで不眠の話を深めてよい（上記「眠れない・不眠の訴え」を優先）"
               : stance.intent === "deepen_share"
         ? "- 今回は短い質問で会話を深めてよい（上記「深める質問」を優先）"
         : "- 1ターンで完全な結論・まとめ・解決策を出さない。会話の糸は残す",
