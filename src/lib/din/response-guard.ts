@@ -19,8 +19,22 @@ const PRE_SLEEP_USER_PATTERN =
 const BEDTIME_PARTNER_ASK_PATTERN =
   /(?:Din|ディン|君|あんた|お前)[、,]?(?:は|も)[？?]?$/i;
 
+/** Din も寝る・休むか（眠れなくて。Dinは寝ないの？ 等） */
+const DIN_SLEEP_ASK_PATTERN =
+  /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠|休)/i;
+
+const BEDTIME_GUARD_INTENTS = new Set<ConversationStance["intent"]>([
+  "pre_sleep_share",
+  "insomnia_share",
+  "sleep_share",
+  "nap_share",
+  "din_inquiry",
+  "comfort_request",
+  "attend_share",
+]);
+
 const MISSION_DISTANCE_RESPONSE_PATTERN =
-  /俺は休まない|俺は寝ない|休まない[。]?$|任務に集中|任務があるから|任務は常に/i;
+  /俺は休まない|俺は寝ない|任務に集中|任務があるから|任務は常に/i;
 
 const PREMATURE_GOODNIGHT_RESPONSE_PATTERN =
   /^[…….\s]*おやすみ[。！!]?$/u;
@@ -64,8 +78,43 @@ function fallbackForEmotional(userInput: string): string {
   return fallbackFromUserTopic(userInput);
 }
 
+function isBedtimeUserContext(
+  userInput: string,
+  intent: ConversationStance["intent"],
+): boolean {
+  return (
+    BEDTIME_GUARD_INTENTS.has(intent) ||
+    PRE_SLEEP_USER_PATTERN.test(userInput) ||
+    INSOMNIA_USER_PATTERN.test(userInput) ||
+    DIN_SLEEP_ASK_PATTERN.test(userInput) ||
+    BEDTIME_PARTNER_ASK_PATTERN.test(userInput.trim())
+  );
+}
+
+function fallbackForBedtimeRefusal(
+  userInput: string,
+  intent: ConversationStance["intent"],
+): string {
+  if (
+    DIN_SLEEP_ASK_PATTERN.test(userInput) ||
+    BEDTIME_PARTNER_ASK_PATTERN.test(userInput.trim())
+  ) {
+    if (INSOMNIA_USER_PATTERN.test(userInput) || intent === "insomnia_share") {
+      return "……ああ。……俺も寝るとしよう。……何が気になる。";
+    }
+    return "……ああ。……俺も寝るとしよう。……傍にいる。";
+  }
+  if (INSOMNIA_USER_PATTERN.test(userInput) || intent === "insomnia_share") {
+    return fallbackForInsomnia(userInput);
+  }
+  return fallbackForPreSleep(userInput);
+}
+
 function fallbackForPreSleep(userInput: string): string {
-  if (BEDTIME_PARTNER_ASK_PATTERN.test(userInput.trim())) {
+  if (
+    DIN_SLEEP_ASK_PATTERN.test(userInput) ||
+    BEDTIME_PARTNER_ASK_PATTERN.test(userInput.trim())
+  ) {
     return "……ああ。……俺も寝るとしよう。……傍にいる。";
   }
   if (/ひとりで眠|眠れるかな|眠れそう/.test(userInput)) {
@@ -91,7 +140,7 @@ function isPrematureGoodnight(content: string): boolean {
   return PREMATURE_GOODNIGHT_RESPONSE_PATTERN.test(content.trim());
 }
 
-/** 寝る前の会話で任務・拒否・早すぎるおやすみを差し替える */
+/** 就寝・不眠・寝る前の会話で任務・拒否・早すぎるおやすみを差し替える */
 export function correctPreSleepResponse(
   userInput: string,
   content: string,
@@ -100,27 +149,25 @@ export function correctPreSleepResponse(
   const normalized = content.trim();
   if (!normalized) return content;
 
-  const preSleepContext =
-    intent === "pre_sleep_share" ||
-    intent === "nap_share" ||
-    PRE_SLEEP_USER_PATTERN.test(userInput) ||
-    BEDTIME_PARTNER_ASK_PATTERN.test(userInput.trim());
+  if (!isBedtimeUserContext(userInput, intent)) return content;
 
-  if (!preSleepContext) return content;
-
-  if (
-    containsMissionDistancePhrase(normalized) ||
-    (intent === "pre_sleep_share" && isPrematureGoodnight(normalized))
-  ) {
-    return fallbackForPreSleep(userInput);
+  if (containsMissionDistancePhrase(normalized)) {
+    return fallbackForBedtimeRefusal(userInput, intent);
   }
 
   if (
-    intent === "pre_sleep_share" &&
+    (intent === "pre_sleep_share" || intent === "insomnia_share") &&
+    isPrematureGoodnight(normalized)
+  ) {
+    return fallbackForBedtimeRefusal(userInput, intent);
+  }
+
+  if (
+    (intent === "pre_sleep_share" || intent === "insomnia_share") &&
     normalized.length <= 12 &&
     /^[…….\s]*そうか[。]?$/u.test(normalized)
   ) {
-    return fallbackForPreSleep(userInput);
+    return fallbackForBedtimeRefusal(userInput, intent);
   }
 
   return content;
