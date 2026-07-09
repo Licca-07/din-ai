@@ -10,6 +10,7 @@
     "test:memory-sync": "tsx scripts/test-memory-sync.ts",
     "test:memory-sync:api": "MEMORY_TEST_API=1 tsx scripts/test-memory-sync.ts",
     "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs",
+    "generate:vapid-keys": "node scripts/generate-vapid-keys.mjs",
     "prebuild": "npm run generate:pwa-icons"
   },
   "dependencies": {
@@ -18,13 +19,15 @@
     "openai": "^6.44.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "uuid": "^14.0.1"
+    "uuid": "^14.0.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",

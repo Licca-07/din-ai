@@ -7,6 +7,7 @@ import {
   getNotificationSupport,
   requestNotificationPermission,
 } from "@/lib/notifications/pomodoro-notifications";
+import { registerWebPushSubscription } from "@/lib/notifications/push-subscription";
 import { PHASE_DURATIONS, PHASE_LABELS } from "@/lib/pomodoro/constants";
 import { formatPomodoroTime } from "@/lib/pomodoro/timer-logic";
 import { usePomodoroTimer } from "@/lib/pomodoro/use-pomodoro-timer";
@@ -15,15 +16,26 @@ export default function PomodoroTimer() {
   const { state, displaySeconds, dinMessage, start, pause, reset, skip } =
     usePomodoroTimer();
   const [permission, setPermission] = useState<NotificationPermission>("default");
+  const [pushRegistered, setPushRegistered] = useState(false);
   const support = getNotificationSupport();
 
   useEffect(() => {
-    void getNotificationPermission().then(setPermission);
+    void getNotificationPermission().then(async (result) => {
+      setPermission(result);
+      if (result === "granted") {
+        const registered = await registerWebPushSubscription();
+        setPushRegistered(registered);
+      }
+    });
   }, []);
 
   const handleEnableNotifications = async () => {
     const result = await requestNotificationPermission();
     setPermission(result);
+    if (result === "granted") {
+      const registered = await registerWebPushSubscription();
+      setPushRegistered(registered);
+    }
   };
 
   const isRunning = state.status === "running";
@@ -63,6 +75,19 @@ export default function PomodoroTimer() {
               className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950"
             >
               通知を許可する
+            </button>
+          </div>
+        )}
+
+        {permission === "granted" && support.serverPushAvailable && !pushRegistered && (
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            ロック画面への通知はサーバー経由の Push 登録が必要です。もう一度ボタンを押してください。
+            <button
+              type="button"
+              onClick={() => void handleEnableNotifications()}
+              className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950"
+            >
+              Push 通知を登録する
             </button>
           </div>
         )}
@@ -167,7 +192,7 @@ export default function PomodoroTimer() {
         <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs leading-relaxed text-zinc-400">
           <p>25分集中 → 5分休憩。4セットごとに15分の長い休憩。</p>
           <p className="mt-1">
-            アプリを閉じても、ホーム画面に追加した PWA なら終了時に通知が届きます。
+            画面ロック中も通知を届けるには、ホーム画面に追加したうえで Push 通知を登録してください。
           </p>
         </div>
       </div>
