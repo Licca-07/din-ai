@@ -1,10 +1,11 @@
-const VERSION = "din-ai-v3";
+const VERSION = "din-ai-v4";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
+  "/audio/silence.mp3",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-512-maskable.png",
@@ -203,6 +204,7 @@ self.addEventListener("fetch", (event) => {
 
   if (
     url.pathname.startsWith("/icons/") ||
+    url.pathname.startsWith("/audio/") ||
     url.pathname === "/manifest.webmanifest" ||
     url.pathname === OFFLINE_URL
   ) {

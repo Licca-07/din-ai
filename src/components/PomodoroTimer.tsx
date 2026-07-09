@@ -192,7 +192,10 @@ export default function PomodoroTimer() {
         <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs leading-relaxed text-zinc-400">
           <p>25分集中 → 5分休憩。4セットごとに15分の長い休憩。</p>
           <p className="mt-1">
-            画面ロック中も通知を届けるには、ホーム画面に追加したうえで Push 通知を登録してください。
+            画面ロック中は、音楽プレイヤー欄に残り時間が表示されます（iOS の仕様上、完全なタイマー表示ではありません）。
+          </p>
+          <p className="mt-1">
+            終了通知は Push 登録済みならロック画面にも届きます。
           </p>
         </div>
       </div>

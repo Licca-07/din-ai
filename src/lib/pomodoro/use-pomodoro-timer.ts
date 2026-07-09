@@ -13,6 +13,14 @@ import {
   type PomodoroCheerContext,
 } from "@/lib/pomodoro/din-cheers";
 import {
+  pausePomodoroMediaSession,
+  resumePomodoroMediaSession,
+  setupPomodoroMediaSessionHandlers,
+  startPomodoroMediaSession,
+  stopPomodoroMediaSession,
+  updatePomodoroMediaSession,
+} from "@/lib/pomodoro/media-session-timer";
+import {
   loadPomodoroState,
   savePomodoroState,
 } from "@/lib/pomodoro/storage";
@@ -33,6 +41,8 @@ export function usePomodoroTimer() {
   );
   const [dinMessage, setDinMessage] = useState(() => pickDinCheer("idle"));
   const stateRef = useRef(state);
+  const pauseRef = useRef<() => Promise<void>>(async () => undefined);
+  const startRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     stateRef.current = state;
@@ -52,6 +62,7 @@ export function usePomodoroTimer() {
       const result = completeCurrentPhase(current);
       persist(result.state);
       showDinCheer(cheerContextForPhaseEnd(current.phase));
+      stopPomodoroMediaSession();
 
       await cancelPomodoroNotification();
       await showPomodoroNotification(
@@ -68,10 +79,93 @@ export function usePomodoroTimer() {
 
     setDisplaySeconds(remaining);
 
+    if (current.status === "running") {
+      updatePomodoroMediaSession(remaining);
+    }
+
     if (current.status === "running" && remaining <= 0) {
       void handlePhaseComplete(current);
     }
   }, [handlePhaseComplete]);
+
+  const pause = useCallback(async () => {
+    const current = stateRef.current;
+    const next = pausePomodoro(current);
+    persist(next);
+    showDinCheer("pause");
+    pausePomodoroMediaSession(getRemainingSeconds(next));
+    await cancelPomodoroNotification();
+  }, [persist, showDinCheer]);
+
+  const start = useCallback(async () => {
+    const current = stateRef.current;
+    const wasPaused = current.status === "paused";
+    const next = startPomodoro(current);
+    persist(next);
+
+    if (next.phase === "focus") {
+      showDinCheer("focusStart");
+    }
+
+    const remaining = getRemainingSeconds(next);
+
+    if (wasPaused) {
+      await resumePomodoroMediaSession(next.phase, remaining);
+    } else {
+      await startPomodoroMediaSession(next.phase, remaining);
+    }
+
+    const endContext = cheerContextForPhaseEnd(next.phase);
+    const scheduledBody = pickDinCheer(endContext);
+    const scheduledTitle =
+      endContext === "focusEnd" ? "Din — 休憩の時間" : "Din — 集中の時間";
+
+    await schedulePomodoroNotification(
+      next.endsAt!,
+      scheduledTitle,
+      scheduledBody,
+    );
+  }, [persist, showDinCheer]);
+
+  const reset = useCallback(async () => {
+    const next = resetPomodoro(stateRef.current);
+    persist(next);
+    stopPomodoroMediaSession();
+    await cancelPomodoroNotification();
+  }, [persist]);
+
+  const skip = useCallback(async () => {
+    const next = skipPomodoroPhase(stateRef.current);
+    persist(next);
+    stopPomodoroMediaSession();
+    await cancelPomodoroNotification();
+  }, [persist]);
+
+  useEffect(() => {
+    pauseRef.current = pause;
+    startRef.current = start;
+  }, [pause, start]);
+
+  useEffect(() => {
+    setupPomodoroMediaSessionHandlers(
+      () => {
+        void pauseRef.current();
+      },
+      () => {
+        void startRef.current();
+      },
+    );
+
+    const restored = loadPomodoroState();
+    if (restored.status === "running") {
+      const remaining = getRemainingSeconds(restored);
+      void startPomodoroMediaSession(restored.phase, remaining);
+    }
+
+    return () => {
+      stopPomodoroMediaSession();
+    };
+  }, []);
 
   useEffect(() => {
     syncDisplay();
@@ -91,46 +185,6 @@ export function usePomodoroTimer() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [syncDisplay]);
-
-  const start = useCallback(async () => {
-    const current = stateRef.current;
-    const next = startPomodoro(current);
-    persist(next);
-
-    if (next.phase === "focus") {
-      showDinCheer("focusStart");
-    }
-
-    const endContext = cheerContextForPhaseEnd(next.phase);
-    const scheduledBody = pickDinCheer(endContext);
-    const scheduledTitle =
-      endContext === "focusEnd" ? "Din — 休憩の時間" : "Din — 集中の時間";
-
-    await schedulePomodoroNotification(
-      next.endsAt!,
-      scheduledTitle,
-      scheduledBody,
-    );
-  }, [persist, showDinCheer]);
-
-  const pause = useCallback(async () => {
-    const next = pausePomodoro(stateRef.current);
-    persist(next);
-    showDinCheer("pause");
-    await cancelPomodoroNotification();
-  }, [persist, showDinCheer]);
-
-  const reset = useCallback(async () => {
-    const next = resetPomodoro(stateRef.current);
-    persist(next);
-    await cancelPomodoroNotification();
-  }, [persist]);
-
-  const skip = useCallback(async () => {
-    const next = skipPomodoroPhase(stateRef.current);
-    persist(next);
-    await cancelPomodoroNotification();
-  }, [persist]);
 
   return {
     state,
