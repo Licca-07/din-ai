@@ -1,8 +1,10 @@
 import {
   PHASE_DURATIONS,
-  PHASE_LABELS,
   POMODOROS_BEFORE_LONG_BREAK,
 } from "@/lib/pomodoro/constants";
+import {
+  pickDinCheer,
+} from "@/lib/pomodoro/din-cheers";
 import type { PomodoroPhase, PomodoroState } from "@/types/pomodoro";
 
 export type PhaseCompleteResult = {
@@ -93,10 +95,7 @@ function advancePhase(state: PomodoroState): PhaseCompleteResult {
         phase: nextPhase,
         completedPomodoros,
       },
-      notification: {
-        title: "集中タイム終了",
-        body: `${PHASE_LABELS[nextPhase]}に入ろう。`,
-      },
+      notification: buildDinNotification("focusEnd"),
     };
   }
 
@@ -105,11 +104,15 @@ function advancePhase(state: PomodoroState): PhaseCompleteResult {
       ...state,
       phase: "focus",
     },
-    notification: {
-      title: `${PHASE_LABELS[state.phase]}終了`,
-      body: "次の集中タイムを始められるよ。",
-    },
+    notification: buildDinNotification("breakEnd"),
   };
+}
+
+function buildDinNotification(context: "focusEnd" | "breakEnd") {
+  const body = pickDinCheer(context);
+  const title = context === "focusEnd" ? "Din — 休憩の時間" : "Din — 集中の時間";
+
+  return { title, body };
 }
 
 export function formatPomodoroTime(totalSeconds: number): string {

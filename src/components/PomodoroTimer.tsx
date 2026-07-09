@@ -12,7 +12,8 @@ import { formatPomodoroTime } from "@/lib/pomodoro/timer-logic";
 import { usePomodoroTimer } from "@/lib/pomodoro/use-pomodoro-timer";
 
 export default function PomodoroTimer() {
-  const { state, displaySeconds, start, pause, reset, skip } = usePomodoroTimer();
+  const { state, displaySeconds, dinMessage, start, pause, reset, skip } =
+    usePomodoroTimer();
   const [permission, setPermission] = useState<NotificationPermission>("default");
   const support = getNotificationSupport();
 
@@ -73,6 +74,17 @@ export default function PomodoroTimer() {
         )}
 
         <div className="flex flex-1 flex-col items-center justify-center">
+          <div className="mb-6 w-full max-w-sm">
+            <div className="flex justify-start">
+              <div className="max-w-full rounded-2xl bg-zinc-800 px-4 py-3 text-sm leading-6 text-zinc-100">
+                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  Din
+                </p>
+                <p>{dinMessage}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="relative mb-8 flex h-64 w-64 items-center justify-center">
             <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 100 100">
               <circle

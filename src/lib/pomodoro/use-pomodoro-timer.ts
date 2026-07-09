@@ -7,7 +7,11 @@ import {
   schedulePomodoroNotification,
   showPomodoroNotification,
 } from "@/lib/notifications/pomodoro-notifications";
-import { PHASE_LABELS } from "@/lib/pomodoro/constants";
+import {
+  cheerContextForPhaseEnd,
+  pickDinCheer,
+  type PomodoroCheerContext,
+} from "@/lib/pomodoro/din-cheers";
 import {
   loadPomodoroState,
   savePomodoroState,
@@ -27,6 +31,7 @@ export function usePomodoroTimer() {
   const [displaySeconds, setDisplaySeconds] = useState(() =>
     getRemainingSeconds(loadPomodoroState()),
   );
+  const [dinMessage, setDinMessage] = useState(() => pickDinCheer("idle"));
   const stateRef = useRef(state);
 
   useEffect(() => {
@@ -38,10 +43,15 @@ export function usePomodoroTimer() {
     savePomodoroState(next);
   }, []);
 
+  const showDinCheer = useCallback((context: PomodoroCheerContext) => {
+    setDinMessage(pickDinCheer(context));
+  }, []);
+
   const handlePhaseComplete = useCallback(
     async (current: PomodoroState) => {
       const result = completeCurrentPhase(current);
       persist(result.state);
+      showDinCheer(cheerContextForPhaseEnd(current.phase));
 
       await cancelPomodoroNotification();
       await showPomodoroNotification(
@@ -49,7 +59,7 @@ export function usePomodoroTimer() {
         result.notification.body,
       );
     },
-    [persist],
+    [persist, showDinCheer],
   );
 
   const syncDisplay = useCallback(() => {
@@ -83,24 +93,32 @@ export function usePomodoroTimer() {
   }, [syncDisplay]);
 
   const start = useCallback(async () => {
-    const next = startPomodoro(stateRef.current);
+    const current = stateRef.current;
+    const next = startPomodoro(current);
     persist(next);
 
-    const phaseLabel = PHASE_LABELS[next.phase];
+    if (next.phase === "focus") {
+      showDinCheer("focusStart");
+    }
+
+    const endContext = cheerContextForPhaseEnd(next.phase);
+    const scheduledBody = pickDinCheer(endContext);
+    const scheduledTitle =
+      endContext === "focusEnd" ? "Din — 休憩の時間" : "Din — 集中の時間";
+
     await schedulePomodoroNotification(
       next.endsAt!,
-      `${phaseLabel}終了`,
-      next.phase === "focus"
-        ? "休憩に入ろう。"
-        : "次の集中タイムを始められるよ。",
+      scheduledTitle,
+      scheduledBody,
     );
-  }, [persist]);
+  }, [persist, showDinCheer]);
 
   const pause = useCallback(async () => {
     const next = pausePomodoro(stateRef.current);
     persist(next);
+    showDinCheer("pause");
     await cancelPomodoroNotification();
-  }, [persist]);
+  }, [persist, showDinCheer]);
 
   const reset = useCallback(async () => {
     const next = resetPomodoro(stateRef.current);
@@ -117,6 +135,7 @@ export function usePomodoroTimer() {
   return {
     state,
     displaySeconds,
+    dinMessage,
     start,
     pause,
     reset,
