@@ -1,4 +1,4 @@
-const VERSION = "din-ai-v2";
+const VERSION = "din-ai-v3";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 
@@ -137,6 +137,32 @@ self.addEventListener("message", (event) => {
   if (data.type === "POMODORO_CANCEL") {
     clearPomodoroSchedule();
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {
+    title: "Din AI",
+    body: "",
+    url: "/",
+    tag: "din-pomodoro",
+  };
+
+  try {
+    payload = { ...payload, ...(event.data?.json() ?? {}) };
+  } catch {
+    payload.body = event.data?.text() ?? "";
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: payload.tag ?? "din-pomodoro",
+      renotify: true,
+      data: { url: payload.url ?? "/" },
+    }),
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

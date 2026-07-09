@@ -5,11 +5,18 @@ export type NotificationSupport = {
   /** iOS ではホーム画面に追加した PWA でのみ通知が使える */
   requiresInstalledPwa: boolean;
   isStandalone: boolean;
+  /** ロック画面向けのサーバー Push が使えるか */
+  serverPushAvailable: boolean;
 };
 
 export function getNotificationSupport(): NotificationSupport {
   if (typeof window === "undefined") {
-    return { supported: false, requiresInstalledPwa: false, isStandalone: false };
+    return {
+      supported: false,
+      requiresInstalledPwa: false,
+      isStandalone: false,
+      serverPushAvailable: false,
+    };
   }
 
   const isStandalone =
@@ -21,10 +28,13 @@ export function getNotificationSupport(): NotificationSupport {
     /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
+  const hasPushManager = "PushManager" in window;
+
   return {
     supported: "Notification" in window && "serviceWorker" in navigator,
     requiresInstalledPwa: isIOS,
     isStandalone,
+    serverPushAvailable: hasPushManager,
   };
 }
 
@@ -59,13 +69,12 @@ export async function showPomodoroNotification(
   } as NotificationOptions);
 }
 
-export async function schedulePomodoroNotification(
+async function scheduleLocalPomodoroNotification(
   endsAt: number,
   title: string,
   body: string,
 ): Promise<void> {
   if (!("serviceWorker" in navigator)) return;
-  if (Notification.permission !== "granted") return;
 
   const registration = await navigator.serviceWorker.ready;
   const worker =
@@ -80,7 +89,29 @@ export async function schedulePomodoroNotification(
   });
 }
 
+export async function schedulePomodoroNotification(
+  endsAt: number,
+  title: string,
+  body: string,
+): Promise<void> {
+  if (Notification.permission !== "granted") return;
+
+  const response = await fetch("/api/pomodoro/schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endsAt, title, body }),
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  await scheduleLocalPomodoroNotification(endsAt, title, body);
+}
+
 export async function cancelPomodoroNotification(): Promise<void> {
+  await fetch("/api/pomodoro/cancel", { method: "POST" }).catch(() => undefined);
+
   if (!("serviceWorker" in navigator)) return;
 
   const registration = await navigator.serviceWorker.ready;
