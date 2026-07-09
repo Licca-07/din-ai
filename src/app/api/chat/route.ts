@@ -216,6 +216,8 @@ export async function POST(request: Request) {
             ? 0.66
           : effectiveStance.intent === "care_share"
             ? 0.67
+            : effectiveStance.intent === "pre_sleep_share"
+              ? 0.66
             : effectiveStance.intent === "sleep_share"
               ? 0.58
               : effectiveStance.intent === "daily_share"

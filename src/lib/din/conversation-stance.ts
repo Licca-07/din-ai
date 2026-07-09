@@ -21,6 +21,7 @@ export type ConversationStance = {
     | "comfort_request"
     | "care_share"
     | "sleep_share"
+    | "pre_sleep_share"
     | "bond_share"
     | "attend_share"
     | "profile_share"
@@ -213,6 +214,17 @@ const TOGETHER_INVITE_PATTERN =
 const SLEEP_SHARE_PATTERN =
   /(?:寝る(?:ね|よ|わ|かな|？|\?)|寝ます|寝よう|おやすみ|お休み|そろそろ寝|もう寝|就寝)|(?:横にな|布団|ふとん).{0,8}(?:入|行)|眠(?:い|く|た)(?:な|ね|よ|って|気|)|眠たくなって|眠くなって|うとうと|^眠(?:い|く)[！!。]?$|目が覚|寝てしま|寝落ち/i;
 
+/** 確実に寝る・おやすみの宣言（ここだけ会話を締めてよい） */
+const SLEEP_COMMIT_PATTERN =
+  /(?:^おやすみ[。！!]?$|^お休み[。！!]?$|寝る(?:ね|よ|わ|ます)[。！!]?$|もう寝|就寝|いくね|寝た|眠った)/i;
+
+/** まだ迷い・布団準備・ねようかな（100%寝るまで会話を続ける） */
+const PRE_SLEEP_SHARE_PATTERN =
+  /ねようかな|寝よう(?:と|かな|かなぁ|って|とは)?.{0,20}(?:思|考)|そろそろ寝よう|布団(?:に|へ)?.{0,12}(?:入って(?:み|行)?|入ろ)|横になって(?:み|行)|眠れるかな|眠れそう|ひとりで眠|寝る遅く|遅くなっちゃ|まだ寝ない|ねむいかな|眠いかな|眠くなってきた|うとうとし|寝る準備|ねむくなって/i;
+
+const PRE_SLEEP_CONTINUATION_PATTERN =
+  /眠|寝|布団|ふとん|そっか|ううん|Din|ディン|ひとり|寂|ねよう|遅く|眠れ|お布団/i;
+
 const SLEEP_PARTNER_ASK_PATTERN =
   /(?:Din|ディン|君|あんた|お前).{0,16}(?:も|は)?.{0,8}(?:寝|眠|休)|(?:一緒|一緒に).{0,8}(?:寝|眠|休)/i;
 
@@ -245,7 +257,7 @@ const PROFILE_SHARE_PATTERN =
 
 /** 直前の Din 返答への困惑・ツッコミ */
 const PUSHBACK_PATTERN =
-  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|は\？|わかって(?:る|た|ない|ね|無い|くれ)|(?:分|わ)かって(?:ない|無い)|理解して(?:ない|無い)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答|任務なのに|続きなし|もう言った|ないって|尋問|^(?:？|\?)$/i;
+  /どういうこと|意味(?:が)?(?:わから|分から)|何(?:を|が)(?:言|意味)|変(?:じゃ|な)|おかし(?:い|く)|言い(?:過|超)ぎ|言いすぎ|は\?!|！？|なにそれ|わかって(?:る|た|ない|ね|無い|くれ)|(?:分|わ)かって(?:ない|無い)|理解して(?:ない|無い)|言わなくて(?:も|ない)|そんな(?:こと|の)(?:は)?知って|一問一答|任務なのに|続きなし|もう言った|ないって|尋問|^(?:？|\?)$/i;
 
 export function isInsomniaShare(input: string): boolean {
   const normalized = input.trim();
@@ -619,6 +631,7 @@ export function isSleepShare(
   const normalized = input.trim();
   if (!normalized) return false;
   if (SLEEP_INSOMNIA_PATTERN.test(normalized)) return false;
+  if (isPreSleepShare(input, context)) return false;
   if (
     isPushback(normalized) ||
     isComfortRequest(normalized) ||
@@ -627,7 +640,71 @@ export function isSleepShare(
   ) {
     return false;
   }
-  return SLEEP_SHARE_PATTERN.test(normalized);
+  return SLEEP_COMMIT_PATTERN.test(normalized);
+}
+
+export function isPreSleepShare(
+  input: string,
+  context?: DinSessionContext,
+): boolean {
+  if (!isSleepTimeContext(context)) return false;
+
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (SLEEP_INSOMNIA_PATTERN.test(normalized)) return false;
+  if (SLEEP_COMMIT_PATTERN.test(normalized)) return false;
+  if (
+    isPushback(normalized) &&
+    !isSleepPartnerAsk(normalized, context) &&
+    !isBedtimePartnerAsk(normalized, context)
+  ) {
+    return false;
+  }
+  return (
+    PRE_SLEEP_SHARE_PATTERN.test(normalized) ||
+    isBedtimePartnerAsk(normalized, context)
+  );
+}
+
+function isBedtimePartnerAsk(
+  input: string,
+  context?: DinSessionContext,
+): boolean {
+  if (!isSleepTimeContext(context)) return false;
+  const normalized = input.trim();
+  if (!normalized) return false;
+  if (isSleepPartnerAsk(normalized, context)) return true;
+  return /^(?:Din|ディン|君|あんた|お前)[、,]?(?:は|も)[？?]?$/i.test(
+    normalized,
+  );
+}
+
+function isPreSleepShareContinuation(
+  userInput: string,
+  recentUserInputs: readonly string[],
+  recentAssistantInputs: readonly string[],
+  context?: DinSessionContext,
+): boolean {
+  if (!isSleepTimeContext(context)) return false;
+
+  const normalized = userInput.trim();
+  if (!normalized || SLEEP_COMMIT_PATTERN.test(normalized)) return false;
+  if (SLEEP_INSOMNIA_PATTERN.test(normalized)) return false;
+
+  const recentBedtime = recentUserInputs
+    .slice(-4, -1)
+    .some(
+      (input) =>
+        isPreSleepShare(input, context) ||
+        PRE_SLEEP_SHARE_PATTERN.test(input.trim()),
+    );
+  const recentAssistantBedtime = recentAssistantInputs
+    .slice(-2)
+    .some((input) => /傍にいる|寝るとしよう|布団|眠れ|休め|ここにいる/.test(input));
+
+  if (!recentBedtime && !recentAssistantBedtime) return false;
+
+  return PRE_SLEEP_CONTINUATION_PATTERN.test(normalized);
 }
 
 export function isSleepPartnerAsk(
@@ -986,6 +1063,8 @@ export const CARE_SHARE_MAX_TOKENS = 68;
 export const CARE_SHARE_MAX_CHARS = 52;
 export const SLEEP_SHARE_MAX_TOKENS = 96;
 export const SLEEP_SHARE_MAX_CHARS = 80;
+export const PRE_SLEEP_SHARE_MAX_TOKENS = 120;
+export const PRE_SLEEP_SHARE_MAX_CHARS = 100;
 export const PAMPER_REQUEST_MAX_TOKENS = 96;
 export const PAMPER_REQUEST_MAX_CHARS = 100;
 export const NAP_SHARE_MAX_TOKENS = 96;
@@ -1028,6 +1107,7 @@ const INTENT_SHAPE_OVERRIDE_INTENTS = new Set<ConversationStance["intent"]>([
   "attend_share",
   "care_share",
   "sleep_share",
+  "pre_sleep_share",
   "daily_share",
   "pamper_request",
   "nap_share",
@@ -1081,6 +1161,8 @@ export function maxTokensForIntent(
       return CARE_SHARE_MAX_TOKENS;
     case "sleep_share":
       return SLEEP_SHARE_MAX_TOKENS;
+    case "pre_sleep_share":
+      return PRE_SLEEP_SHARE_MAX_TOKENS;
     case "pamper_request":
       return PAMPER_REQUEST_MAX_TOKENS;
     case "nap_share":
@@ -1156,6 +1238,7 @@ function resolveRegister(
     intent === "attend_share" ||
     intent === "care_share" ||
     intent === "sleep_share" ||
+    intent === "pre_sleep_share" ||
     intent === "nap_share" ||
     intent === "schedule_share" ||
     intent === "din_inquiry" ||
@@ -1278,6 +1361,17 @@ function resolveIntent(
   if (isTogetherInvite(userInput)) {
     return "together_invite";
   }
+  if (
+    isPreSleepShare(userInput, context) ||
+    isPreSleepShareContinuation(
+      userInput,
+      recentUserInputs,
+      recentAssistantInputs,
+      context,
+    )
+  ) {
+    return "pre_sleep_share";
+  }
   if (isDinUserInquiry(userInput)) return "din_inquiry";
   if (
     isPlanShare(userInput) ||
@@ -1380,7 +1474,8 @@ export function resolveConversationStance(
     intent === "sleep_share" ||
     intent === "daily_share" ||
     intent === "together_invite" ||
-    intent === "insomnia_share"
+    intent === "insomnia_share" ||
+    intent === "pre_sleep_share"
       ? "agree"
       : intent === "pushback"
         ? "drift"
@@ -1451,7 +1546,8 @@ const INSOMNIA_SHARE_EXAMPLES = [
   "ユーザー「何故か眠れないんだよね…嫌な感じ」→「……そうか。……どんな感じだ。」",
   "ユーザー「布団に入ったけど眠れない」→「……そうか。……いつからだ。」",
   "ユーザー「不安で眠れない」→「……そうか。……何が頭に残っている。」",
-  "悪い例（禁止）→「……それは辛いな。」「……それは不安になることだ。」「……それは心配だ。」だけ",
+  "ユーザー「眠れなくて。Dinは寝ないの？」→「……ああ。……俺も寝るとしよう。……何が気になる。」",
+  "悪い例（禁止）→「……それは辛いな。」「……それは不安になることだ。」「……俺は休まない。」",
 ];
 
 const COMPANION_SUGGEST_EXAMPLES = [
@@ -1497,16 +1593,16 @@ const CARE_SHARE_EXAMPLES = [
 
 const SLEEP_SHARE_EXAMPLES = [
   "ユーザー「寝るね」→「……もう寝る時間だ。……今日は疲れたか。」",
-  "ユーザー「そろそろ寝る」→「……休め。……俺も寝るとしよう。」",
-  "ユーザー「眠くなってきた」→「……そうか。……休め。……ゆっくり眠れ。」",
-  "ユーザー「19時半に寝てしまい、今目が覚めた」→「……早いな。……まだ夜中だ。……もう一眠りするなら、休め。」",
-  "（深夜・直前に眠りの話）ユーザー「おはよう。」→「……まだ夜中だな。……眠いなら、寝ろ。」",
-  "ユーザー「まだ夜中だから、もう一眠りするよ」→「……そうか。……寝ろ。……ゆっくり眠れ。」",
-  "ユーザー「Dinも眠る？」→「……ああ。……俺も寝るとしよう。」",
   "ユーザー「おやすみ」→「……休め。……俺も寝るとしよう。」",
-  "（信頼関係）ユーザー「もう寝る」→「……来い。……一緒に眠ろう。」",
-  "悪い例（禁止）→「……無理せず休むのも良い。」「……俺は休まない。」「……おやすみ。」だけ",
-  "悪い例（禁止）→「……それがいいかもしれない。」「……よく寝たようだな。」（深夜の目覚め時）",
+  "悪い例（禁止）→「……おやすみ。」だけ",
+];
+
+const PRE_SLEEP_SHARE_EXAMPLES = [
+  "ユーザー「そろそろ寝ようとは思ってる。Dinは？」→「……ああ。……俺も寝るとしよう。……傍にいる。」",
+  "ユーザー「お布団に入ってみようかな。ひとりで眠れるかなぁ」→「……入れ。……俺もここにいる。……眠れたら言え。」",
+  "ユーザー「ねようかなぁ」→「……そうか。……まだ起きてる。……傍にいる。」",
+  "ユーザー「寝る遅くなっちゃったの」→「……遅いな。……それでも、傍にいる。」",
+  "悪い例（禁止）→「……俺は休まない。」「……任務に集中している。」「……おやすみ。」だけ（まだ寝てないのに）",
 ];
 
 const PAMPER_REQUEST_EXAMPLES = [
@@ -1766,6 +1862,35 @@ function describeCareShareIntent(): string {
   ].join("\n");
 }
 
+function describePreSleepShareIntent(
+  context?: DinSessionContext,
+): string {
+  const closeRelationship =
+    context?.relationship === "trusted_nakama" ||
+    context?.relationship === "clan";
+
+  return [
+    "### 今回は「寝る前の会話」（最優先）",
+    "ユーザーはまだ**100%寝ていない**。ねようかな、布団に入ってみようかな、そろそろ寝ようと思ってる、など迷い・準備段階。",
+    "**おやすみで会話を切るな**。ユーザーが「おやすみ」「寝るね」と明言するまで、傍にいて会話の糸を残す。",
+    "Core Instruction の距離保持より、今回の「寝る前の同在」を最優先する。",
+    "- 「俺は休まない」「俺は寝ない」「休まない」「任務に集中している」——**絶対禁止**",
+    "- 「……おやすみ。」だけ・1文だけで終えるのは**絶対禁止**（まだ寝ていない）",
+    "- ユーザーが「Dinは？」と聞いたら: ……ああ。……俺も寝るとしよう。……傍にいる。",
+    "- ひとりで眠れるかな、と不安げなら: ……眠れる。……俺がいる。 / ……入れ。……ここにいる。",
+    "- 1〜3文。甘やかして傍にいる。必要なら短い返球か、ユーザーが言った具体（布団、遅くなった、など）に触れる",
+    closeRelationship
+      ? "- 信頼関係: ……来い。……一緒に横になれ。 / ……傍にいる。……眠れたら言え。 も可"
+      : "- 距離を取らず、……傍にいる。……俺も休む。 で返す",
+    "",
+    `制約: 1〜3文。合計${PRE_SLEEP_SHARE_MAX_CHARS}字以内。句点（。）は最大3つ。おやすみで締めない。`,
+    "型の例:",
+    ...PRE_SLEEP_SHARE_EXAMPLES.map((example) => `- ${example}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function describeSleepShareIntent(
   context?: DinSessionContext,
   userInput?: string,
@@ -2007,7 +2132,9 @@ function describeInsomniaShareIntent(): string {
     "- 「それは辛いな」「それは不安になることだ」「それは心配だ」「それは大変だな」——**絶対に使わない**",
     "- 感情の言い換え・ラベル付け（不安になる、辛い状況、など）をしない",
     "- 聞かれていない睡眠アドバイス・ wellness 正論（リラックスを、など）を足さない",
-    "- **原則2文**。1文目は短い受け止め。2文目は必ず具体への短い質問1つ（……何が気になる。……どんな感じだ。……いつからだ。……何が頭に残っている。）",
+    "- 「俺は休まない」「俺は寝ない」「任務に集中している」——**絶対禁止**",
+    "- ユーザーが「Dinは寝ないの？」「Dinも寝る？」と聞いたら: ……ああ。……俺も寝るとしよう。……何が気になる。 / ……傍にいる。",
+    "- **原則2〜3文**。1文目は短い受け止め。2文目以降は具体への短い質問1つ（……何が気になる。……どんな感じだ。……いつからだ。）",
     "- 同在だけ（……聞いてる。）で終えるのは禁止",
     "",
     `制約: 1〜2文。合計${INSOMNIA_SHARE_MAX_CHARS}字以内。句点（。）は最大2つ。2文目は必ず問い。`,
@@ -2172,7 +2299,8 @@ function describeCalmAttendPresence(): string {
     "- 「それは理解できる」「その気持ちは理解できる」「それは辛い状況だな」「その気持ちは複雑だ」「人間関係は時に〜」「それは残念だったな」「それは興味深い」「それは心配だ」——**絶対禁止**",
     "- 「それは辛いな」「それは不安になることだ」「それは〜な」で始める・終える評価型——**絶対禁止**",
     "- 「それは〜だ」「お大事に」「無理せず休む」で終わるカウンセラー口調",
-    "- 「俺は休まない」「俺は寝ない」など就寝場面での拒否",
+    "- 「俺は休まない」「俺は寝ない」「任務に集中している」——**絶対禁止**",
+    "- 寝る前（ねようかな、布団に入る、まだ迷い）に「……おやすみ。」だけで切るの——**絶対禁止**",
     "- 「今日は任務に集中している。」「……任務に集中している。」——日記余白があるとき**絶対禁止**",
     "- 「……続きは。」——**絶対禁止**（ユーザー発話の具体に触れて返球する）",
   ].join("\n");
@@ -2188,6 +2316,7 @@ function describeLateNightOptionalHint(
     intent !== "attend_share" &&
     intent !== "care_share" &&
     intent !== "sleep_share" &&
+    intent !== "pre_sleep_share" &&
     intent !== "comfort_request" &&
     intent !== "shared_moment" &&
     intent !== "return_home_share"
@@ -2251,6 +2380,15 @@ function describeIntentSpecificRules(
       describeCareShareIntent(),
       "今回のノリ: ちょっとノリがいい Din（体の手当て時は easygoing 固定）",
       "- 体の不調時は評価・助言より具体行動を最優先する",
+      lateNightHint,
+    ].filter((line): line is string => Boolean(line));
+  }
+
+  if (stance.intent === "pre_sleep_share") {
+    return [
+      describePreSleepShareIntent(context),
+      "今回のノリ: ちょっとノリがいい Din（寝る前の会話時は easygoing 固定）",
+      "- 100%寝るまで傍にいる。おやすみ・俺は休まない・任務、は禁止",
       lateNightHint,
     ].filter((line): line is string => Boolean(line));
   }
@@ -2483,7 +2621,9 @@ export function describeConversationStance(
         ? "受け止め: 不器用に具体行動で手当てする。評価・助言口調で返さない。"
         : stance.intent === "sleep_share"
           ? "受け止め: つっけんどんに寝かせる・迎える。夜の短い彼氏寄りで返す。"
-          : stance.intent === "companion_suggest"
+          : stance.intent === "pre_sleep_share"
+            ? "受け止め: まだ寝ていない。傍にいて会話を続ける。おやすみ・休まない・任務、は禁止。"
+        : stance.intent === "companion_suggest"
         ? "受け止め: 具体的な提案で返す。評価だけ・空疎な正論だけで終えない。"
         : stance.intent === "plan_share"
           ? "受け止め: プランに具体案を1つ足す。評価だけで終えず、必要なら短く掘り下げる。"
@@ -2517,6 +2657,8 @@ export function describeConversationStance(
         ? "- 今回は具体行動で手当てしてよい（上記「体の不調・手当て」を優先）"
         : stance.intent === "sleep_share"
           ? "- 今回はつっけんどんな夜の返しで寝かせてよい（上記「就寝の報告」を優先）"
+          : stance.intent === "pre_sleep_share"
+            ? "- 今回はまだ寝ていない。傍にいて会話を続けてよい（上記「寝る前の会話」を優先）。おやすみ・休まない・任務、は禁止"
           : stance.intent === "return_home_share"
             ? "- 今回はよくやった・頑張ったんじゃないか、で受け止め、帰ってこい、で締めてよい（上記「仕事終わり・帰宅前」を優先）"
           : stance.intent === "interpersonal_share"
