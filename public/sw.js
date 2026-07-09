@@ -1,4 +1,4 @@
-const VERSION = "din-ai-v1";
+const VERSION = "din-ai-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 
@@ -10,6 +10,9 @@ const PRECACHE_URLS = [
   "/icons/icon-512-maskable.png",
   "/icons/apple-touch-icon.png",
 ];
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pomodoroTimeoutId = null;
 
 function shouldBypass(request) {
   const url = new URL(request.url);
@@ -59,6 +62,44 @@ async function handleNavigate(request) {
   }
 }
 
+function clearPomodoroSchedule() {
+  if (pomodoroTimeoutId !== null) {
+    clearTimeout(pomodoroTimeoutId);
+    pomodoroTimeoutId = null;
+  }
+}
+
+function schedulePomodoroNotification(data) {
+  clearPomodoroSchedule();
+
+  const { endsAt, title, body, tag } = data;
+  const delay = endsAt - Date.now();
+
+  if (delay <= 0) {
+    void self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: tag ?? "din-pomodoro",
+      renotify: true,
+      data: { url: "/" },
+    });
+    return;
+  }
+
+  pomodoroTimeoutId = setTimeout(() => {
+    pomodoroTimeoutId = null;
+    void self.registration.showNotification(title, {
+      body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: tag ?? "din-pomodoro",
+      renotify: true,
+      data: { url: "/" },
+    });
+  }, delay);
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -80,6 +121,45 @@ self.addEventListener("activate", (event) => {
         ),
       )
       .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+
+  if (!data || typeof data !== "object") return;
+
+  if (data.type === "POMODORO_SCHEDULE") {
+    schedulePomodoroNotification(data);
+    return;
+  }
+
+  if (data.type === "POMODORO_CANCEL") {
+    clearPomodoroSchedule();
+  }
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const targetUrl = event.notification.data?.url ?? "/";
+
+  event.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        for (const client of windowClients) {
+          if ("focus" in client) {
+            return client.focus();
+          }
+        }
+
+        if (clients.openWindow) {
+          return clients.openWindow(targetUrl);
+        }
+
+        return undefined;
+      }),
   );
 });
 

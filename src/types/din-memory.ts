@@ -26,4 +26,4 @@ export type DinMemory = {
   lastStartupMessage: string | null;
 };
 
-export type DinMemoryTab = "chat" | "memory";
+export type DinMemoryTab = "chat" | "memory" | "pomodoro";

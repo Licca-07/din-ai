@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import Chat from "@/components/Chat";
 import MemoryBook from "@/components/MemoryBook";
+import PomodoroTimer from "@/components/PomodoroTimer";
 import { initMemory, getLastMemorySyncError } from "@/lib/din/memory";
 import type { DinMemoryTab } from "@/types/din-memory";
 
 const tabs: { id: DinMemoryTab; label: string }[] = [
   { id: "chat", label: "チャット" },
+  { id: "pomodoro", label: "ポモドーロ" },
   { id: "memory", label: "記憶" },
 ];
 
@@ -99,6 +101,8 @@ export default function DinApp() {
             key={memoryRevision}
             onJournalUpdated={handleJournalUpdated}
           />
+        ) : activeTab === "pomodoro" ? (
+          <PomodoroTimer />
         ) : (
           <MemoryBook
             memoryRevision={memoryRevision}
